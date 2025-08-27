@@ -1,9 +1,8 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Search,
   Upload,
-  Filter,
   ChevronRight,
   X,
   Grid as GridIcon,
@@ -12,120 +11,108 @@ import {
   FileText,
   ChevronDown,
   LogIn,
-  Flag,
   Heart,
+  Flag,
+  Trash2,
 } from "lucide-react";
 
-// --- import local assets so Vite resolves them correctly ---
-import BambooImg from "./assets/Bamboo.png";
-import CartilageImg from "./assets/cartilage.png";
-import CiliatedImg from "./assets/ciliated_epithelium.png";
+/** ----------------------------------------------------
+ * Physics Wallah Logo (placeholder)
+ * Replace with official SVG when available
+ -----------------------------------------------------*/
+const PhysicsWallahLogo: React.FC<React.SVGProps<SVGSVGElement>> = (props) => (
+  <svg
+    viewBox="0 0 160 40"
+    role="img"
+    aria-label="Creative Hub"
+    height="40"
+    width="auto"
+    {...props}
+  >
+    <g fill="none" fillRule="evenodd">
+      <image href="/pw-logo.png" x="0" y="0" height="40" width="40" />
+      <text
+        x="46"
+        y="25"
+        fontFamily="Inter, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial"
+        fontSize="16"
+        fontWeight="700"
+        fill="#111"
+      >
+        Creative Hub
+      </text>
+    </g>
+  </svg>
+);
 
-/* =====================================================
-   Types
-   ===================================================== */
+/* ============================== Types ============================== */
 export type Asset = {
   id: string;
-  title: string;
+  title: string; // Saved as: BaseTitle[CODE] V1
   type: "photo" | "video" | "document" | "vector";
-  thumb: string;
-  dominantColor: string;
-  width: number;
-  height: number;
-  tags: string[];
-  uploadedBy: string;
+  thumb: string; // object URL or CDN URL
+  tags: string[]; // 3–10 tags for images
+  uploadedBy: string; // uploader email
   createdAt: string; // ISO
   downloads: number;
   views: number;
-  grade?: string;
-  subject?: string;
+  // taxonomy (mostly for images)
+  grade?: string; // "9" | "10" | "11" | "12"
+  stream?: string; // Science | Commerce | Humanities
+  subject?: string; // Physics, Accountancy, etc
   chapter?: string;
   topic?: string;
+  subtopic?: string;
+  artStyle?: string; // Pixar | Vector | Semi Realistic | Realistic
+  version?: string; // V1 default
+  code?: string; // 9-char code GG SSS CC AA
+  folderPath?: string; // grade-subject-chapter-topic-subtopic
 };
 
-/* =====================================================
-   Data
-   ===================================================== */
-const CURR_DATE = new Date().toISOString();
+/* ============================== Auth (mock) ============================== */
+// Only allow @pw.live emails. Define admins explicitly.
+type User = { email: string; name: string; role: "admin" | "user" };
 
-const MOCK_ASSETS: Asset[] = [
-  {
-    id: "asset_bamboo",
-    title: "Bamboo (Plant Tissue context)",
-    type: "photo",
-    thumb: BambooImg, // <<< changed
-    dominantColor: "emerald",
-    width: 3000,
-    height: 2000,
-    tags: ["grade9", "science", "tissues", "plant", "bamboo"],
-    uploadedBy: "Teacher",
-    createdAt: CURR_DATE,
-    downloads: 120,
-    views: 980,
-    grade: "9",
-    subject: "Science",
-    chapter: "Tissues",
-    topic: "Bamboo",
-  },
-  {
-    id: "asset_cartilage",
-    title: "Cartilage (Connective Tissue)",
-    type: "photo",
-    thumb: CartilageImg, // <<< changed
-    dominantColor: "amber",
-    width: 3000,
-    height: 2000,
-    tags: ["grade9", "science", "tissues", "connective", "cartilage"],
-    uploadedBy: "Teacher",
-    createdAt: CURR_DATE,
-    downloads: 105,
-    views: 870,
-    grade: "9",
-    subject: "Science",
-    chapter: "Tissues",
-    topic: "cartilage",
-  },
-  {
-    id: "asset_ciliated",
-    title: "Ciliated Epithelium (Epithelial Tissue)",
-    type: "photo",
-    thumb: CiliatedImg, // <<< changed
-    dominantColor: "violet",
-    width: 3000,
-    height: 2000,
-    tags: ["grade9", "science", "tissues", "epithelial", "ciliated_epithelium"],
-    uploadedBy: "Teacher",
-    createdAt: CURR_DATE,
-    downloads: 97,
-    views: 760,
-    grade: "9",
-    subject: "Science",
-    chapter: "Tissues",
-    topic: "ciliated_epithelium",
-  },
-];
+const ADMIN_EMAILS = new Set<string>(["admin@pw.live", "design.lead@pw.live"]);
 
-/* =====================================================
-   Small UI helpers
-   ===================================================== */
+// In-memory mock directory. Domain enforcement still applies.
+const MOCK_CREDENTIALS: Record<string, { password: string; name: string }> = {
+  "admin@pw.live": { password: "admin123", name: "Admin" },
+  "teacher1@pw.live": { password: "pw12345", name: "Teacher 1" },
+  "editor@pw.live": { password: "pw12345", name: "Editor" },
+};
+
+/* ============================== Small UI helpers ============================== */
 const Badge: React.FC<{ children: React.ReactNode }> = ({ children }) => (
   <span className="inline-block rounded-full border px-2 py-0.5 text-xs text-gray-600 bg-white/60 backdrop-blur">
     {children}
   </span>
 );
 
-// Simple select component
+const FieldError: React.FC<{ show?: boolean; msg?: string }> = ({
+  show,
+  msg,
+}) =>
+  show ? (
+    <p className="mt-1 text-[11px] text-red-600">
+      {msg || "This field should be filled"}
+    </p>
+  ) : null;
+
 const Select: React.FC<{
   value: string;
   onChange: (v: string) => void;
   options: string[];
   placeholder?: string;
-}> = ({ value, onChange, options, placeholder }) => (
+  disabled?: boolean;
+}> = ({ value, onChange, options, placeholder, disabled }) => (
   <div className="relative">
     <select
+      aria-label={placeholder || "Select"}
       value={value}
       onChange={(e) => onChange(e.target.value)}
-      className="w-full appearance-none pl-3 pr-8 py-2 text-xs rounded-xl border bg-white"
+      disabled={disabled}
+      className="w-full appearance-none pl-3 pr-8 py-2 text-xs rounded-xl border bg-white disabled:bg-gray-100 disabled:text-gray-400"
     >
       {placeholder && <option value="">{placeholder}</option>}
       {options.map((o) => (
@@ -138,15 +125,124 @@ const Select: React.FC<{
   </div>
 );
 
-/* =====================================================
-   Asset Card
-   ===================================================== */
+/* ============================== Hierarchy data (Filters & Upload) ============================== */
+const SUBJECTS_BY_GRADE: Record<string, string[]> = {
+  "9": ["Science"],
+  "10": ["Physics"],
+  "11|Science": ["Physics"],
+  "11|Commerce": ["Accountancy"],
+  "11|Humanities": ["History"],
+  "12|Science": ["Physics"],
+  "12|Commerce": ["Accountancy"],
+  "12|Humanities": ["History"],
+};
+
+const CHAPTERS_BY_SUBJECT: Record<string, string[]> = {
+  "9|Science": ["Motion", "Force & Laws of Motion", "Gravitation"],
+  "10|Physics": ["Electricity", "Light", "Human Eye & Colourful World"],
+  "11|Science|Physics": ["Laws of Motion", "Work, Energy, Power"],
+  "11|Commerce|Accountancy": ["Accounting Equations", "Journal Entries"],
+  "11|Humanities|History": ["Early Societies", "Changing Traditions"],
+  "12|Science|Physics": ["Electrostatics"],
+  "12|Commerce|Accountancy": ["Partnership Accounts"],
+  "12|Humanities|History": ["Modern India"],
+};
+
+const TOPICS_BY_CHAPTER: Record<string, string[]> = {
+  "9|Science|Motion": [
+    "Distance & Displacement",
+    "Speed/Velocity/Acceleration",
+  ],
+  "10|Physics|Electricity": ["Ohm’s Law", "Series & Parallel Circuits"],
+  "11|Science|Physics|Laws of Motion": ["Newton’s Laws", "Friction"],
+  "11|Commerce|Accountancy|Journal Entries": [
+    "Rules of Debit and Credit",
+    "Ledger Posting",
+  ],
+  "11|Humanities|History|Early Societies": [
+    "Nomadic Life",
+    "Agricultural Settlements",
+  ],
+};
+
+const SUBTOPICS_BY_TOPIC: Record<string, string[]> = {
+  "9|Science|Motion|Speed/Velocity/Acceleration": [
+    "Average Speed",
+    "Uniform vs Non-uniform Motion",
+  ],
+  "10|Physics|Electricity|Series & Parallel Circuits": [
+    "Resistance in Series",
+    "Resistance in Parallel",
+  ],
+  "11|Science|Physics|Laws of Motion|Newton’s Laws": [
+    "First Law (Inertia)",
+    "Second Law (F = ma)",
+    "Third Law (Action-Reaction)",
+  ],
+  "11|Commerce|Accountancy|Journal Entries|Ledger Posting": [
+    "Balancing Accounts",
+  ],
+};
+
+const STREAMS = ["Science", "Commerce", "Humanities"] as const;
+const ART_STYLES = ["Pixar", "Vector", "Semi Realistic", "Realistic"] as const;
+const ART_STYLE_CODES: Record<string, string> = {
+  Pixar: "PX",
+  Vector: "VE",
+  "Semi Realistic": "SR",
+  Realistic: "RL",
+};
+
+// Nomenclature helpers
+const pad2 = (n: number | string) => String(n).padStart(2, "0");
+const toSubjCode = (s: string) =>
+  s
+    .replace(/[^a-z]/gi, "")
+    .toUpperCase()
+    .slice(0, 3) || "XXX";
+export const buildCode = (
+  grade: string,
+  subject: string,
+  chapterNo: string,
+  artStyle: string
+) => {
+  const g = pad2(grade);
+  const s = toSubjCode(subject);
+  const c = pad2(chapterNo || "01");
+  const a = ART_STYLE_CODES[artStyle] || "XX";
+  // 2 + 3 + 2 + 2 = 9
+  return `${g}${s}${c}${a}`;
+};
+
+/* ============================== Developer Tests (lightweight) ============================== */
+(function runDevTests() {
+  try {
+    console.assert(
+      buildCode("10", "Physics", "01", "Pixar").length === 9,
+      "code length should be 9"
+    );
+    console.assert(
+      buildCode("9", "Science", "7", "Vector").endsWith("VE"),
+      "art style code mapping"
+    );
+    console.assert(
+      buildCode("11", "Accountancy", "3", "Realistic").slice(2, 5) ===
+        "ACC".slice(0, 3),
+      "subject code 3 letters"
+    );
+  } catch (e) {
+    // no-op in production
+  }
+})();
+
+/* ============================== Asset Card ============================== */
 const AssetCard: React.FC<{
   asset: Asset;
   view: "grid" | "list";
   onOpen: (a: Asset) => void;
-  onFav: (a: Asset) => void;
-}> = ({ asset, view, onOpen, onFav }) => {
+  onFavClick: (a: Asset) => void;
+  isFav: boolean;
+}> = ({ asset, view, onOpen, onFavClick, isFav }) => {
   const TypeIcon =
     asset.type === "video"
       ? Film
@@ -186,10 +282,15 @@ const AssetCard: React.FC<{
           </div>
           <div className="flex items-center gap-2">
             <button
-              onClick={() => onFav(asset)}
-              className="px-2 py-1 text-xs rounded-lg border inline-flex items-center gap-1"
+              aria-pressed={isFav}
+              onClick={() => onFavClick(asset)}
+              className={`px-2 py-1 text-xs rounded-lg border inline-flex items-center gap-1 ${
+                isFav ? "bg-pink-50" : ""
+              }`}
+              title={isFav ? "Remove from Favs" : "Add to Favs"}
             >
-              <Heart className="h-3 w-3" /> Fav
+              <Heart className={`h-3 w-3 ${isFav ? "fill-current" : ""}`} />{" "}
+              {isFav ? "Fav’d" : "Fav"}
             </button>
           </div>
         </div>
@@ -207,63 +308,102 @@ const AssetCard: React.FC<{
   );
 };
 
-/* =====================================================
-   Filters Sidebar
-   ===================================================== */
+/* ============================== Filters (visible to everyone) ============================== */
 const FiltersPanel: React.FC<{
   activeTab: "images" | "videos" | "templates";
+  // hierarchy selections
   grade: string;
   setGrade: (v: string) => void;
+  stream: string;
+  setStream: (v: string) => void;
   subject: string;
   setSubject: (v: string) => void;
   chapter: string;
   setChapter: (v: string) => void;
   topic: string;
   setTopic: (v: string) => void;
+  subtopic: string;
+  setSubtopic: (v: string) => void;
+  // styles
   artStyle: string;
-  setArtStyle: (v: string) => void;
+  setArtStyle: (v: string) => void; // images
+  templateStyle: string;
+  setTemplateStyle: (v: string) => void; // templates
+  // sort
+  sortBy: "Newest" | "Oldest" | "Popular";
+  setSortBy: (v: "Newest" | "Oldest" | "Popular") => void;
 }> = ({
   activeTab,
   grade,
   setGrade,
+  stream,
+  setStream,
   subject,
   setSubject,
   chapter,
   setChapter,
   topic,
   setTopic,
+  subtopic,
+  setSubtopic,
   artStyle,
   setArtStyle,
+  templateStyle,
+  setTemplateStyle,
+  sortBy,
+  setSortBy,
 }) => {
-  const chaptersBySelection: Record<string, string[]> = {
-    "9|Science": ["Tissues"],
-  };
-  const chapterKey = `${grade}|${subject}`;
-  const chapterOptions = chaptersBySelection[chapterKey] || [];
+  const needsStream = grade === "11" || grade === "12";
+  const subjectKey = needsStream ? `${grade}|${stream}` : grade;
+  const subjectOptions = SUBJECTS_BY_GRADE[subjectKey] || [];
+  const chapterKey = needsStream
+    ? `${grade}|${stream}|${subject}`
+    : `${grade}|${subject}`;
+  const chapterOptions = CHAPTERS_BY_SUBJECT[chapterKey] || [];
+  const topicKey = `${chapterKey}|${chapter}`;
+  const topicOptions = TOPICS_BY_CHAPTER[topicKey] || [];
+  const subtopicKey = `${topicKey}|${topic}`;
+  const subtopicOptions = SUBTOPICS_BY_TOPIC[subtopicKey] || [];
 
-  const allTopics = Array.from(
-    new Set(
-      MOCK_ASSETS.filter((a) => {
-        return (
-          (!grade || a.grade === grade) &&
-          (!subject || a.subject === subject) &&
-          (!chapter || a.chapter === chapter)
-        );
-      })
-        .map((a) => a.topic)
-        .filter(Boolean) as string[]
-    )
-  );
-  const topicOptions = ["All", ...allTopics];
+  const onGradeChange = (g: string) => {
+    setGrade(g);
+    setStream("");
+    setSubject("");
+    setChapter("");
+    setTopic("");
+    setSubtopic("");
+  };
+  const onStreamChange = (s: string) => {
+    setStream(s);
+    setSubject("");
+    setChapter("");
+    setTopic("");
+    setSubtopic("");
+  };
+  const onSubjectChange = (s: string) => {
+    setSubject(s);
+    setChapter("");
+    setTopic("");
+    setSubtopic("");
+  };
+  const onChapterChange = (c: string) => {
+    setChapter(c);
+    setTopic("");
+    setSubtopic("");
+  };
+  const onTopicChange = (t: string) => {
+    setTopic(t);
+    setSubtopic("");
+  };
 
   return (
     <div className="rounded-2xl border bg-white p-4 shadow-sm">
       <div className="flex items-center justify-between">
         <h4 className="text-sm font-semibold text-gray-900">Filters</h4>
-        <Filter className="h-4 w-4 text-gray-500" />
       </div>
-      <div className="mt-4 space-y-4">
-        {activeTab === "images" && (
+
+      {activeTab === "images" && (
+        <div className="mt-4 space-y-4">
           <div className="rounded-xl border p-3 space-y-3">
             <p className="text-xs font-semibold text-gray-700">
               Images Filters
@@ -273,63 +413,283 @@ const FiltersPanel: React.FC<{
                 <label className="block text-xs mb-1">Grade</label>
                 <Select
                   value={grade}
-                  onChange={setGrade}
+                  onChange={onGradeChange}
                   options={["9", "10", "11", "12"]}
                   placeholder="Select Grade"
                 />
               </div>
+              {needsStream && (
+                <div>
+                  <label className="block text-xs mb-1">Stream</label>
+                  <Select
+                    value={stream}
+                    onChange={onStreamChange}
+                    options={[...STREAMS]}
+                    placeholder="Select Stream"
+                  />
+                </div>
+              )}
               <div>
                 <label className="block text-xs mb-1">Subject</label>
                 <Select
                   value={subject}
-                  onChange={setSubject}
-                  options={["Science"]}
+                  onChange={onSubjectChange}
+                  options={subjectOptions}
                   placeholder="Select Subject"
+                  disabled={needsStream ? !stream : !grade}
                 />
               </div>
               <div>
                 <label className="block text-xs mb-1">Chapter</label>
                 <Select
                   value={chapter}
-                  onChange={setChapter}
+                  onChange={onChapterChange}
                   options={chapterOptions}
                   placeholder="Select Chapter"
+                  disabled={!subject}
                 />
               </div>
               <div>
                 <label className="block text-xs mb-1">Topic</label>
                 <Select
                   value={topic}
-                  onChange={setTopic}
+                  onChange={onTopicChange}
                   options={topicOptions}
                   placeholder="Select Topic"
+                  disabled={!chapter}
+                />
+              </div>
+              <div>
+                <label className="block text-xs mb-1">Sub-topic</label>
+                <Select
+                  value={subtopic}
+                  onChange={setSubtopic}
+                  options={subtopicOptions}
+                  placeholder="Select Sub-topic"
+                  disabled={!topic}
                 />
               </div>
             </div>
           </div>
-        )}
+          <div className="rounded-xl border p-3 space-y-2">
+            <p className="text-xs font-semibold text-gray-700">Art Style</p>
+            <Select
+              value={artStyle}
+              onChange={setArtStyle}
+              options={[...ART_STYLES]}
+              placeholder="Select Style"
+            />
+          </div>
+        </div>
+      )}
 
-        <div className="rounded-xl border p-3 space-y-2">
-          <p className="text-xs font-semibold text-gray-700">Art Style</p>
-          <Select
-            value={artStyle}
-            onChange={setArtStyle}
-            options={
-              ["", "Pixar", "Vector", "Semi Realistic", "Realistic"].filter(
-                Boolean
-              ) as string[]
-            }
-            placeholder="Select Style"
-          />
+      {activeTab === "templates" && (
+        <div className="mt-4 space-y-4">
+          <div className="rounded-xl border p-3 space-y-3">
+            <p className="text-xs font-semibold text-gray-700">
+              Template Filters
+            </p>
+            <div className="grid grid-cols-1 gap-3">
+              <div>
+                <label className="block text-xs mb-1">Grade</label>
+                <Select
+                  value={grade}
+                  onChange={onGradeChange}
+                  options={["9", "10", "11", "12"]}
+                  placeholder="Select Grade"
+                />
+              </div>
+              {(grade === "11" || grade === "12") && (
+                <div>
+                  <label className="block text-xs mb-1">Stream</label>
+                  <Select
+                    value={stream}
+                    onChange={onStreamChange}
+                    options={[...STREAMS]}
+                    placeholder="Select Stream"
+                  />
+                </div>
+              )}
+              <div>
+                <label className="block text-xs mb-1">Subject</label>
+                <Select
+                  value={subject}
+                  onChange={onSubjectChange}
+                  options={subjectOptions}
+                  placeholder="Select Subject"
+                  disabled={needsStream ? !stream : !grade}
+                />
+              </div>
+              <div>
+                <label className="block text-xs mb-1">Chapter</label>
+                <Select
+                  value={chapter}
+                  onChange={onChapterChange}
+                  options={chapterOptions}
+                  placeholder="Select Chapter"
+                  disabled={!subject}
+                />
+              </div>
+            </div>
+          </div>
+          <div className="rounded-xl border p-3 space-y-2">
+            <p className="text-xs font-semibold text-gray-700">Style</p>
+            <Select
+              value={templateStyle}
+              onChange={setTemplateStyle}
+              options={["Gradient-based", "2D"]}
+              placeholder="Select Style"
+            />
+          </div>
+        </div>
+      )}
+
+      <div className="mt-4 rounded-2xl border bg-white p-3">
+        <p className="text-xs font-semibold text-gray-700 mb-2">Sort</p>
+        <div className="relative">
+          <select
+            value={sortBy}
+            onChange={(e) => setSortBy(e.target.value as any)}
+            className="appearance-none pl-3 pr-8 py-2 text-xs rounded-xl border bg-white w-full"
+            aria-label="Sort by"
+          >
+            <option>Newest</option>
+            <option>Oldest</option>
+            <option>Popular</option>
+          </select>
+          <ChevronDown className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-500" />
         </div>
       </div>
     </div>
   );
 };
 
-/* =====================================================
-   Report Modal
-   ===================================================== */
+/* ============================== Modals ============================== */
+const SignInModal: React.FC<{
+  open: boolean;
+  onClose: () => void;
+  onSignedIn: (u: User) => void;
+  defaultEmail?: string;
+}> = ({ open, onClose, onSignedIn, defaultEmail }) => {
+  const [email, setEmail] = useState(defaultEmail || "");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onEsc = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onEsc);
+    return () => window.removeEventListener("keydown", onEsc);
+  }, [open, onClose]);
+
+  useEffect(() => {
+    if (!open) {
+      setError(null);
+      setPassword("");
+    }
+  }, [open]);
+  if (!open) return null;
+
+  const submit = (e?: React.FormEvent) => {
+    e?.preventDefault();
+    setError(null);
+    const domainOk = /@pw\.live$/i.test(email.trim());
+    if (!domainOk) {
+      setError("Only @pw.live accounts can sign in.");
+      return;
+    }
+    const creds = MOCK_CREDENTIALS[email.trim().toLowerCase()];
+    if (!creds || creds.password !== password) {
+      setError("Invalid email or password.");
+      return;
+    }
+    const role: User["role"] = ADMIN_EMAILS.has(email.trim().toLowerCase())
+      ? "admin"
+      : "user";
+    onSignedIn({ email: email.trim().toLowerCase(), name: creds.name, role });
+    onClose();
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-50"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Sign in"
+    >
+      <div className="fixed inset-0 flex items-center justify-center">
+        <div className="absolute inset-0 bg-black/40" onClick={onClose} />
+        <motion.div
+          initial={{ scale: 0.95, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          className="relative w-full max-w-md rounded-2xl border bg-white p-5 shadow-xl max-h-[70vh] overflow-y-auto"
+        >
+          <div className="flex items-center justify-between">
+            <h3 className="text-base font-semibold text-gray-900">Sign in</h3>
+            <button
+              onClick={onClose}
+              className="p-2 hover:bg-gray-100 rounded-full"
+              aria-label="Close"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+          <form className="mt-4 space-y-3" onSubmit={submit}>
+            <div>
+              <label className="block text-xs mb-1" htmlFor="email">
+                Email
+              </label>
+              <input
+                id="email"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="w-full rounded-xl border px-3 py-2 text-sm"
+                placeholder="you@pw.live"
+              />
+            </div>
+            <div>
+              <label className="block text-xs mb-1" htmlFor="password">
+                Password
+              </label>
+              <input
+                id="password"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="w-full rounded-xl border px-3 py-2 text-sm"
+                placeholder="••••••••"
+              />
+            </div>
+            {error && <p className="text-xs text-red-600">{error}</p>}
+            <div className="mt-2 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={onClose}
+                className="px-3 py-2 text-sm rounded-xl border"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="px-3 py-2 text-sm rounded-xl bg-black text-white"
+              >
+                Sign in
+              </button>
+            </div>
+          </form>
+          <p className="mt-3 text-[11px] text-gray-500">
+            Access is restricted to the pw.live domain. Admins can upload
+            assets.
+          </p>
+        </motion.div>
+      </div>
+    </div>
+  );
+};
+
 const ReportModal: React.FC<{
   open: boolean;
   asset?: Asset | null;
@@ -345,13 +705,19 @@ const ReportModal: React.FC<{
   const [contact, setContact] = useState("");
   const [comment, setComment] = useState("");
 
+  useEffect(() => {
+    if (!open) return;
+    const onEsc = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onEsc);
+    return () => window.removeEventListener("keydown", onEsc);
+  }, [open, onClose]);
   if (!open) return null;
+
   const handleSubmit = () => {
-    if (!name || !contact || !comment) {
-      alert("All fields are required");
-      return;
-    }
-    onSubmit({ name, contact, comment, assetId: asset ? asset.id : undefined });
+    if (!name || !contact || !comment) return alert("All fields are required");
+    onSubmit({ name, contact, comment, assetId: asset?.id });
     onClose();
     setName("");
     setContact("");
@@ -359,200 +725,532 @@ const ReportModal: React.FC<{
   };
 
   return (
-    <div className="fixed inset-0 z-50">
-      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
-      <motion.div
-        initial={{ scale: 0.95, opacity: 0 }}
-        animate={{ scale: 1, opacity: 1 }}
-        className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-md rounded-2xl border bg-white p-5 shadow-xl"
-      >
-        <div className="flex items-center justify-between">
-          <h3 className="text-base font-semibold text-gray-900">
-            Report asset
-          </h3>
-          <button
-            onClick={onClose}
-            className="p-2 hover:bg-gray-100 rounded-full"
-          >
-            <X className="h-5 w-5" />
-          </button>
-        </div>
-        <div className="mt-4 space-y-3">
-          <div>
-            <label className="block text-xs mb-1">Name</label>
-            <input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              className="w-full rounded-xl border px-3 py-2 text-sm"
-              placeholder="Your name"
-            />
+    <div
+      className="fixed inset-0 z-50"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Report asset"
+    >
+      <div className="fixed inset-0 flex items-center justify-center">
+        <div className="absolute inset-0 bg-black/40" onClick={onClose} />
+        <motion.div
+          initial={{ scale: 0.95, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          className="relative w-full max-w-md rounded-2xl border bg-white p-5 shadow-xl max-h-[70vh] overflow-y-auto"
+        >
+          <div className="flex items-center justify-between">
+            <h3 className="text-base font-semibold text-gray-900">
+              Report asset
+            </h3>
+            <button
+              onClick={onClose}
+              className="p-2 hover:bg-gray-100 rounded-full"
+              aria-label="Close"
+            >
+              <X className="h-5 w-5" />
+            </button>
           </div>
-          <div>
-            <label className="block text-xs mb-1">Contact</label>
-            <input
-              value={contact}
-              onChange={(e) => setContact(e.target.value)}
-              className="w-full rounded-xl border px-3 py-2 text-sm"
-              placeholder="Email or phone"
-            />
+          <div className="mt-4 space-y-3">
+            <div>
+              <label className="block text-xs mb-1">Name</label>
+              <input
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                className="w-full rounded-xl border px-3 py-2 text-sm"
+                placeholder="Your name"
+              />
+            </div>
+            <div>
+              <label className="block text-xs mb-1">Contact</label>
+              <input
+                value={contact}
+                onChange={(e) => setContact(e.target.value)}
+                className="w-full rounded-xl border px-3 py-2 text-sm"
+                placeholder="Email or phone"
+              />
+            </div>
+            <div>
+              <label className="block text-xs mb-1">Comment</label>
+              <textarea
+                value={comment}
+                onChange={(e) => setComment(e.target.value)}
+                className="w-full rounded-xl border px-3 py-2 text-sm"
+                rows={4}
+                placeholder="Describe the issue"
+              />
+            </div>
           </div>
-          <div>
-            <label className="block text-xs mb-1">Comment</label>
-            <textarea
-              value={comment}
-              onChange={(e) => setComment(e.target.value)}
-              className="w-full rounded-xl border px-3 py-2 text-sm"
-              rows={4}
-              placeholder="Describe the issue"
-            />
+          <div className="mt-5 flex items-center justify-end gap-2">
+            <button
+              onClick={onClose}
+              className="px-3 py-2 text-sm rounded-xl border"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleSubmit}
+              className="px-3 py-2 text-sm rounded-xl bg-black text-white"
+            >
+              Submit
+            </button>
           </div>
-        </div>
-        <div className="mt-5 flex items-center justify-end gap-2">
-          <button
-            onClick={onClose}
-            className="px-3 py-2 text-sm rounded-xl border"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={handleSubmit}
-            className="px-3 py-2 text-sm rounded-xl bg-black text-white"
-          >
-            Submit
-          </button>
-        </div>
-      </motion.div>
+        </motion.div>
+      </div>
     </div>
   );
 };
 
-/* =====================================================
-   Upload Modal
-   ===================================================== */
+/* ===== Delete Chooser (replaces window.prompt) ===== */
+const DeleteChooserModal: React.FC<{
+  open: boolean;
+  onClose: () => void;
+  onTemp: () => void;
+  onPerm: () => void;
+}> = ({ open, onClose, onTemp, onPerm }) => {
+  useEffect(() => {
+    if (!open) return;
+    const onEsc = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onEsc);
+    return () => window.removeEventListener("keydown", onEsc);
+  }, [open, onClose]);
+
+  if (!open) return null;
+  return (
+    <div
+      className="fixed inset-0 z-[60]"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Delete options"
+    >
+      <div className="fixed inset-0 flex items-center justify-center">
+        <div className="absolute inset-0 bg-black/40" onClick={onClose} />
+        <motion.div
+          initial={{ scale: 0.95, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          className="relative w-full max-w-md rounded-2xl border bg-white p-5 shadow-xl max-h-[70vh] overflow-y-auto"
+        >
+          <div className="flex items-center justify-between">
+            <h3 className="text-base font-semibold text-gray-900 inline-flex items-center gap-2">
+              <Trash2 className="h-4 w-4" /> Delete asset
+            </h3>
+            <button
+              onClick={onClose}
+              className="p-2 hover:bg-gray-100 rounded-full"
+              aria-label="Close"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+          <p className="mt-3 text-sm text-gray-600">
+            Choose how you want to delete this asset.
+          </p>
+          <div className="mt-4 grid gap-2">
+            <button
+              className="px-4 py-2 rounded-xl border text-sm text-left hover:bg-gray-50"
+              onClick={onTemp}
+            >
+              <div className="font-medium">Delete temporarily</div>
+              <div className="text-xs text-gray-600">
+                Removes from the portal only
+              </div>
+            </button>
+            <button
+              className="px-4 py-2 rounded-xl border text-sm text-left hover:bg-gray-50"
+              onClick={onPerm}
+            >
+              <div className="font-medium text-red-600">Delete permanently</div>
+              <div className="text-xs text-gray-600">
+                Removes from the portal and triggers the Drive delete stub
+              </div>
+            </button>
+          </div>
+        </motion.div>
+      </div>
+    </div>
+  );
+};
+
+/* ============================== Upload Modal (images only) ============================== */
 const UploadModal: React.FC<{
   open: boolean;
   onClose: () => void;
-  activeTab: "images" | "videos" | "templates";
-}> = ({ open, onClose, activeTab }) => {
+  onConfirm: (asset: Asset) => void;
+  currentUser: User;
+}> = ({ open, onClose, onConfirm, currentUser }) => {
   const [fileName, setFileName] = useState<string>("");
+  const [fileObj, setFileObj] = useState<File | null>(null);
+  const [baseTitle, setBaseTitle] = useState<string>("");
+
+  // taxonomy for Images
+  const [grade, setGrade] = useState("");
+  const [stream, setStream] = useState("");
+  const [subject, setSubject] = useState("");
+  const [chapter, setChapter] = useState("");
+  const [topic, setTopic] = useState("");
+  const [artStyle, setArtStyle] = useState("");
+  const [chapterNo, setChapterNo] = useState("");
+  const [tagsInput, setTagsInput] = useState("");
+
+  const needsStream = grade === "11" || grade === "12";
+  const subjectOptions =
+    SUBJECTS_BY_GRADE[needsStream ? `${grade}|${stream}` : grade] || [];
+  const chapterOptions =
+    CHAPTERS_BY_SUBJECT[
+      needsStream ? `${grade}|${stream}|${subject}` : `${grade}|${subject}`
+    ] || [];
+  const topicOptions =
+    TOPICS_BY_CHAPTER[
+      (needsStream ? `${grade}|${stream}|${subject}` : `${grade}|${subject}`) +
+        `|${chapter}`
+    ] || [];
+
+  // derived
+  const tags = useMemo(
+    () =>
+      tagsInput
+        .split(",")
+        .map((t) => t.trim())
+        .filter(Boolean),
+    [tagsInput]
+  );
+
+  // touched for inline errors
+  const [touched, setTouched] = useState<Record<string, boolean>>({});
+  const markTouched = (k: string) => setTouched((p) => ({ ...p, [k]: true }));
+
+  useEffect(() => {
+    if (!open) return;
+    const onEsc = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onEsc);
+    return () => window.removeEventListener("keydown", onEsc);
+  }, [open, onClose]);
+
+  useEffect(() => {
+    if (!open) {
+      setFileName("");
+      setFileObj(null);
+      setBaseTitle("");
+      setGrade("");
+      setStream("");
+      setSubject("");
+      setChapter("");
+      setTopic("");
+      setArtStyle("");
+      setChapterNo("");
+      setTagsInput("");
+      setTouched({});
+    }
+  }, [open]);
 
   if (!open) return null;
 
-  const acceptByTab =
-    activeTab === "images"
-      ? "image/*"
-      : activeTab === "videos"
-      ? "video/*"
-      : ".pdf,.ai,.psd,.svg,.doc,.docx,.ppt,.pptx,.xd,.fig,.eps";
+  // images only
+  const accept = "image/*";
+  const validateFile = (file: File) => file.type.startsWith("image/");
 
-  const validateByTab = (file: File) => {
-    if (activeTab === "images" && !file.type.startsWith("image/")) return false;
-    if (activeTab === "videos" && !file.type.startsWith("video/")) return false;
-    if (
-      activeTab === "templates" &&
-      (file.type.startsWith("image/") || file.type.startsWith("video/"))
-    )
-      return false;
-    return true;
+  // validation
+  const req = {
+    file: !!fileObj,
+    title: !!baseTitle.trim(),
+    grade: !!grade,
+    subject: !!subject,
+    chapter: !!chapter,
+    topic: !!topic,
+    artStyle: !!artStyle,
+    tags: tags.length >= 3 && tags.length <= 10,
+  };
+  const allValid = Object.values(req).every(Boolean);
+
+  const handleConfirm = () => {
+    if (!allValid || !fileObj) return;
+    const url = URL.createObjectURL(fileObj);
+    const code = buildCode(grade, subject, chapterNo || "01", artStyle);
+    const finalTitle = `${baseTitle}[${code}] V1`;
+    const folderPath = [grade, subject, chapter, topic]
+      .filter(Boolean)
+      .join("-");
+
+    const asset: Asset = {
+      id: `asset_${Date.now()}`,
+      title: finalTitle,
+      type: "photo",
+      thumb: url,
+      tags,
+      uploadedBy: currentUser.email,
+      createdAt: new Date().toISOString(),
+      downloads: 0,
+      views: 0,
+      grade,
+      stream,
+      subject,
+      chapter,
+      topic,
+      artStyle,
+      version: "V1",
+      code,
+      folderPath,
+    };
+
+    onConfirm(asset);
+    onClose();
   };
 
   return (
-    <div className="fixed inset-0 z-50">
-      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
-      <motion.div
-        initial={{ scale: 0.95, opacity: 0 }}
-        animate={{ scale: 1, opacity: 1 }}
-        className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-md rounded-2xl border bg-white p-5 shadow-xl"
-      >
-        <div className="flex items-center justify-between">
-          <h3 className="text-base font-semibold text-gray-900">
-            Upload{" "}
-            {activeTab === "images"
-              ? "image"
-              : activeTab === "videos"
-              ? "video"
-              : "template"}
-          </h3>
-          <button
-            onClick={onClose}
-            className="p-2 hover:bg-gray-100 rounded-full"
-          >
-            <X className="h-5 w-5" />
-          </button>
-        </div>
-        <div className="mt-4 space-y-3">
-          <label className="block text-sm text-gray-700">Choose a file</label>
-          <input
-            type="file"
-            accept={acceptByTab}
-            onChange={(e) => {
-              const target = e.target as HTMLInputElement;
-              const f = target && target.files && target.files[0];
-              if (!f) {
-                setFileName("");
-                return;
-              }
-              if (!validateByTab(f)) {
-                alert("Selected file type is not allowed for this tab.");
-                (e.currentTarget as HTMLInputElement).value = "";
-                setFileName("");
-                return;
-              }
-              setFileName(f.name);
-            }}
-            className="block w-full text-sm"
-          />
-          {fileName && (
-            <div className="rounded-xl border p-3 text-sm text-gray-700">
-              <span className="font-medium">Preview name:</span> {fileName}
+    <div
+      className="fixed inset-0 z-50"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Upload image"
+    >
+      <div className="fixed inset-0 flex items-center justify-center">
+        <div className="absolute inset-0 bg-black/40" onClick={onClose} />
+        <motion.div
+          initial={{ scale: 0.95, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          className="relative w-full max-w-md rounded-2xl border bg-white p-5 shadow-xl max-h-[70vh] overflow-y-auto"
+        >
+          <div className="flex items-center justify-between">
+            <h3 className="text-base font-semibold text-gray-900">
+              Upload image
+            </h3>
+            <button
+              onClick={onClose}
+              className="p-2 hover:bg-gray-100 rounded-full"
+              aria-label="Close"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+
+          {/* Scrollable content area */}
+          <div className="mt-4 space-y-3 max-h-[70vh] overflow-y-auto pr-1">
+            <label className="block text-sm text-gray-700">Choose a file</label>
+            <input
+              type="file"
+              accept={accept}
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (!f) {
+                  setFileName("");
+                  setFileObj(null);
+                  return;
+                }
+                if (!validateFile(f)) {
+                  alert("Please select an image file.");
+                  e.currentTarget.value = "";
+                  setFileName("");
+                  setFileObj(null);
+                  return;
+                }
+                setFileName(f.name);
+                setFileObj(f);
+              }}
+              className="block w-full text-sm"
+              onBlur={() => markTouched("file")}
+            />
+            <FieldError
+              show={touched.file && !req.file}
+              msg="Please select an image"
+            />
+
+            <div>
+              <label className="block text-xs mb-1">Title</label>
+              <input
+                value={baseTitle}
+                onChange={(e) => setBaseTitle(e.target.value)}
+                onBlur={() => markTouched("title")}
+                className="w-full rounded-xl border px-3 py-2 text-sm"
+                placeholder="Short descriptive title"
+              />
+              <FieldError show={touched.title && !req.title} />
             </div>
-          )}
-        </div>
-        <div className="mt-5 flex items-center justify-end gap-2">
-          <button
-            onClick={onClose}
-            className="px-3 py-2 text-sm rounded-xl border"
-          >
-            Cancel
-          </button>
-          <button
-            className="px-3 py-2 text-sm rounded-xl bg-black text-white"
-            disabled={!fileName}
-          >
-            Confirm upload
-          </button>
-        </div>
-      </motion.div>
+
+            <div>
+              <label className="block text-xs mb-1">Grade</label>
+              <Select
+                value={grade}
+                onChange={(v) => {
+                  setGrade(v);
+                  setStream("");
+                  setSubject("");
+                  setChapter("");
+                  setTopic("");
+                }}
+                options={["9", "10", "11", "12"]}
+                placeholder="Select Grade"
+              />
+              <FieldError show={touched.grade && !req.grade} />
+            </div>
+            {needsStream && (
+              <div>
+                <label className="block text-xs mb-1">Stream</label>
+                <Select
+                  value={stream}
+                  onChange={(v) => {
+                    setStream(v);
+                    setSubject("");
+                    setChapter("");
+                    setTopic("");
+                  }}
+                  options={[...STREAMS]}
+                  placeholder="Select Stream"
+                />
+              </div>
+            )}
+            <div>
+              <label className="block text-xs mb-1">Subject</label>
+              <Select
+                value={subject}
+                onChange={(v) => {
+                  setSubject(v);
+                  setChapter("");
+                  setTopic("");
+                }}
+                options={subjectOptions}
+                placeholder="Select Subject"
+                disabled={needsStream ? !stream : !grade}
+              />
+              <FieldError show={touched.subject && !req.subject} />
+            </div>
+            <div>
+              <label className="block text-xs mb-1">Chapter</label>
+              <Select
+                value={chapter}
+                onChange={(v) => {
+                  setChapter(v);
+                  setTopic("");
+                }}
+                options={chapterOptions}
+                placeholder="Select Chapter"
+                disabled={!subject}
+              />
+              <FieldError show={touched.chapter && !req.chapter} />
+            </div>
+            <div>
+              <label className="block text-xs mb-1">Topic</label>
+              <Select
+                value={topic}
+                onChange={setTopic}
+                options={topicOptions}
+                placeholder="Select Topic"
+                disabled={!chapter}
+              />
+              <FieldError show={touched.topic && !req.topic} />
+            </div>
+            <div>
+              <label className="block text-xs mb-1">Art Style</label>
+              <Select
+                value={artStyle}
+                onChange={setArtStyle}
+                options={[...ART_STYLES]}
+                placeholder="Select Style"
+              />
+              <FieldError show={touched.artStyle && !req.artStyle} />
+            </div>
+            <div>
+              <label className="block text-xs mb-1">
+                Tags (comma-separated, 3–10)
+              </label>
+              <input
+                value={tagsInput}
+                onChange={(e) => setTagsInput(e.target.value)}
+                onBlur={() => markTouched("tags")}
+                className="w-full rounded-xl border px-3 py-2 text-sm"
+                placeholder="e.g., electricity, circuit, physics"
+              />
+              <p
+                className={`mt-1 text-[11px] ${
+                  !req.tags ? "text-red-600" : "text-gray-500"
+                }`}
+              >
+                Current: {tags.length}. Min 3, max 10.
+              </p>
+            </div>
+
+            {fileName && (
+              <div className="rounded-xl border p-3 text-sm text-gray-700">
+                <span className="font-medium">Selected:</span> {fileName}
+              </div>
+            )}
+          </div>
+
+          <div className="mt-5 flex items-center justify-end gap-2">
+            <button
+              onClick={onClose}
+              className="px-3 py-2 text-sm rounded-xl border"
+            >
+              Cancel
+            </button>
+            <button
+              className="px-3 py-2 text-sm rounded-xl bg-black text-white disabled:opacity-50"
+              disabled={!allValid}
+              onClick={handleConfirm}
+            >
+              Confirm upload
+            </button>
+          </div>
+        </motion.div>
+      </div>
     </div>
   );
 };
 
-/* =====================================================
-   Detail Drawer
-   ===================================================== */
+/* ============================== Detail Drawer ============================== */
 const DetailDrawer: React.FC<{
   asset: Asset;
   onClose: () => void;
-  onFav: (a: Asset) => void;
-  onReport: (a: Asset) => void;
-}> = ({ asset, onClose, onFav, onReport }) => {
+  onFavProtected: (a: Asset) => void;
+  onReportProtected: (a: Asset) => void;
+  onDownloadProtected: (a: Asset) => void;
+  onDeleteTemp: (a: Asset) => void;
+  onDeletePerm: (a: Asset) => void;
+  isFav: boolean;
+  canDelete?: boolean;
+}> = ({
+  asset,
+  onClose,
+  onFavProtected,
+  onReportProtected,
+  onDownloadProtected,
+  onDeleteTemp,
+  onDeletePerm,
+  isFav,
+  canDelete,
+}) => {
+  const [deleteOpen, setDeleteOpen] = useState(false);
+
+  useEffect(() => {
+    const onEsc = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onEsc);
+    return () => window.removeEventListener("keydown", onEsc);
+  }, [onClose]);
+
   if (!asset) return null;
   const uploadedDate = new Date(asset.createdAt).toLocaleDateString();
 
   return (
-    <div className="fixed inset-0 z-50">
+    <div className="fixed inset-0 flex items-center justify-center">
       <div className="absolute inset-0 bg-black/40" onClick={onClose} />
       <motion.div
         initial={{ x: "100%" }}
         animate={{ x: 0 }}
         exit={{ x: "100%" }}
         className="absolute right-0 top-0 h-full w-full max-w-xl bg-white shadow-2xl p-6 overflow-y-auto"
+        role="dialog"
+        aria-modal="true"
+        aria-label={`Details for ${asset.title}`}
       >
         <div className="flex items-center justify-between gap-2">
           <h3 className="text-lg font-semibold text-gray-900">{asset.title}</h3>
           <div className="flex items-center gap-2">
             <button
-              onClick={() => onReport(asset)}
+              onClick={() => onReportProtected(asset)}
               className="p-2 rounded-full border"
               aria-label="Report"
             >
@@ -593,183 +1291,272 @@ const DetailDrawer: React.FC<{
         </div>
 
         <div className="mt-6 flex items-center gap-3">
-          <button className="px-4 py-2 rounded-xl bg-black text-white text-sm inline-flex items-center gap-2">
+          <button
+            onClick={() => onDownloadProtected(asset)}
+            className="px-4 py-2 rounded-xl bg-black text-white text-sm inline-flex items-center gap-2"
+          >
             <ChevronRight className="h-4 w-4" /> Download
           </button>
           <button
-            onClick={() => onFav(asset)}
+            onClick={() => onFavProtected(asset)}
             className="px-4 py-2 rounded-xl border text-sm inline-flex items-center gap-2"
           >
-            <Heart className="h-4 w-4" /> Fav
+            <Heart className={`h-4 w-4 ${isFav ? "fill-current" : ""}`} />{" "}
+            {isFav ? "Unfav" : "Fav"}
           </button>
+          {canDelete && (
+            <button
+              onClick={() => setDeleteOpen(true)}
+              className="px-4 py-2 rounded-xl border text-sm inline-flex items-center gap-2 text-red-600"
+            >
+              <X className="h-4 w-4" /> Delete
+            </button>
+          )}
         </div>
+
+        {/* Delete Chooser */}
+        <DeleteChooserModal
+          open={!!deleteOpen}
+          onClose={() => setDeleteOpen(false)}
+          onTemp={() => {
+            setDeleteOpen(false);
+            onDeleteTemp(asset);
+          }}
+          onPerm={() => {
+            setDeleteOpen(false);
+            onDeletePerm(asset);
+          }}
+        />
       </motion.div>
     </div>
   );
 };
 
-/* =====================================================
-   Guide
-   ===================================================== */
-const Guide: React.FC = () => {
-  const [open, setOpen] = useState(false);
-  return (
-    <div className="rounded-2xl border bg-white">
-      <button
-        onClick={() => setOpen(!open)}
-        className="w-full flex items-center justify-between px-4 py-3 text-left"
-      >
-        <span className="text-sm font-semibold text-gray-900">
-          How to use this portal
-        </span>
-        <ChevronDown
-          className={`h-4 w-4 transition-transform ${open ? "rotate-180" : ""}`}
-        />
-      </button>
-      <AnimatePresence initial={false}>
-        {open && (
-          <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: "auto", opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            className="px-4 pb-4 text-sm text-gray-700"
-          >
-            <ol className="list-decimal ml-5 space-y-1">
-              <li>Search or browse assets.</li>
-              <li>Apply filters and choose a sort option.</li>
-              <li>Click an asset to view details.</li>
-              <li>Download or mark as Fav.</li>
-              <li>Upload via drag-and-drop or the Upload button.</li>
-            </ol>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </div>
-  );
-};
-
-/* =====================================================
-   Main App
-   ===================================================== */
-const App: React.FC = () => {
+/* ============================== Main App ============================== */
+const CreativeHubDemo: React.FC = () => {
+  // Search / view
   const [q, setQ] = useState("");
+  const [debouncedQ, setDebouncedQ] = useState("");
   const [view, setView] = useState<"grid" | "list">("grid");
-  const [selected, setSelected] = useState<Asset | null>(null);
 
-  // upload/report modals
-  const [uploadOpen, setUploadOpen] = useState(false);
-  const [reportOpen, setReportOpen] = useState(false);
-  const [reportAsset, setReportAsset] = useState<Asset | null>(null);
-
-  // fav state
-  const [favIds, setFavIds] = useState<Set<string>>(new Set());
+  // Auth
+  const [user, setUser] = useState<User | null>(null);
+  const [profileOpen, setProfileOpen] = useState(false);
+  const [signInOpen, setSignInOpen] = useState(false);
+  const [signInPrefill, setSignInPrefill] = useState<string | undefined>(
+    undefined
+  );
 
   // Tabs
   type Tab = "images" | "videos" | "templates";
   const [activeTab, setActiveTab] = useState<Tab>("images");
 
-  // Auth (mock)
-  const [user, setUser] = useState<{ name: string } | null>(null);
-  const [profileOpen, setProfileOpen] = useState(false);
-
   // Sorting
   type SortBy = "Newest" | "Oldest" | "Popular";
   const [sortBy, setSortBy] = useState<SortBy>("Newest");
 
-  // Images advanced filters
+  // Filters state (visible to everyone)
   const [grade, setGrade] = useState("");
+  const [stream, setStream] = useState("");
   const [subject, setSubject] = useState("");
   const [chapter, setChapter] = useState("");
   const [topic, setTopic] = useState("");
+  const [subtopic, setSubtopic] = useState("");
   const [artStyle, setArtStyle] = useState("");
+  const [templateStyle, setTemplateStyle] = useState("");
 
+  // Assets start empty (no mocks)
+  const [assets, setAssets] = useState<Asset[]>([]);
+  const [selected, setSelected] = useState<Asset | null>(null);
+
+  // Upload/report
+  const [uploadOpen, setUploadOpen] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false);
+  const [reportAsset, setReportAsset] = useState<Asset | null>(null);
+
+  // Favorites
+  const [favIds, setFavIds] = useState<Set<string>>(new Set());
+
+  // Debounce search
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQ(q.trim().toLowerCase()), 250);
+    return () => clearTimeout(t);
+  }, [q]);
+
+  // Profile popover outside click
+  const profileRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const onClick = (e: MouseEvent) => {
+      if (!profileRef.current) return;
+      if (!profileRef.current.contains(e.target as Node)) setProfileOpen(false);
+    };
+    document.addEventListener("click", onClick);
+    return () => document.removeEventListener("click", onClick);
+  }, []);
+
+  // Role helpers
+  const isLoggedIn = !!user;
+  const isAdmin = user?.role === "admin";
+
+  // Protected action wrapper: if not logged in, open Sign In modal first
+  const ensureAuthed = (next: () => void, emailHint?: string) => {
+    if (!isLoggedIn) {
+      if (emailHint) setSignInPrefill(emailHint);
+      setSignInOpen(true);
+      return;
+    }
+    next();
+  };
+
+  // Upload gate (admins only)
+  const openUpload = () => {
+    if (!isLoggedIn) {
+      setSignInPrefill(undefined);
+      setSignInOpen(true);
+      return;
+    }
+    if (!isAdmin) {
+      alert("Only admins can upload assets.");
+      return;
+    }
+    setUploadOpen(true);
+  };
+
+  // Filter and sort
   const tabTypeMap: Record<Tab, Asset["type"][]> = {
     images: ["photo"],
     videos: ["video"],
     templates: ["document", "vector"],
   };
 
-  const onFav = (a: Asset) => {
-    setFavIds(
-      (prev) =>
-        new Set(
-          prev.has(a.id)
-            ? [...Array.from(prev).filter((id) => id !== a.id)]
-            : [...Array.from(prev), a.id]
-        )
-    );
-  };
-
-  const onReport = (a: Asset) => {
-    setReportAsset(a);
-    setReportOpen(true);
-  };
-
   const filtered = useMemo(() => {
-    let list = MOCK_ASSETS.filter((a) =>
-      a.title.toLowerCase().includes(q.toLowerCase())
-    ).filter((a) => tabTypeMap[activeTab].includes(a.type));
+    let list = assets
+      .filter((a) => tabTypeMap[activeTab].includes(a.type))
+      .filter((a) => {
+        const ql = debouncedQ;
+        if (!ql) return true;
+        return (
+          a.title.toLowerCase().includes(ql) ||
+          a.tags.some((t) => t.toLowerCase().includes(ql)) ||
+          a.uploadedBy.toLowerCase().includes(ql)
+        );
+      });
 
+    // Apply taxonomy filters (only when values are selected)
     if (activeTab === "images") {
-      if (grade) list = list.filter((a) => !a.grade || a.grade === grade);
-      if (subject)
-        list = list.filter((a) => !a.subject || a.subject === subject);
-      if (chapter)
-        list = list.filter((a) => !a.chapter || a.chapter === chapter);
-      if (topic && topic !== "All")
-        list = list.filter((a) => !a.topic || a.topic === topic);
+      if (grade) list = list.filter((a) => a.grade === grade);
+      if (stream) list = list.filter((a) => a.stream === stream);
+      if (subject) list = list.filter((a) => a.subject === subject);
+      if (chapter) list = list.filter((a) => a.chapter === chapter);
+      if (topic) list = list.filter((a) => a.topic === topic);
+      if (subtopic) list = list.filter((a) => a.subtopic === subtopic);
+      if (artStyle) list = list.filter((a) => a.artStyle === artStyle);
     }
 
     if (sortBy === "Newest")
-      list = list
-        .slice()
-        .sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt));
+      list = list.sort(
+        (a, b) => +new Date(b.createdAt) - +new Date(a.createdAt)
+      );
     if (sortBy === "Oldest")
-      list = list
-        .slice()
-        .sort((a, b) => +new Date(a.createdAt) - +new Date(b.createdAt));
+      list = list.sort(
+        (a, b) => +new Date(a.createdAt) - +new Date(b.createdAt)
+      );
     if (sortBy === "Popular")
-      list = list.slice().sort((a, b) => b.downloads - a.downloads);
-
+      list = list.sort((a, b) => b.downloads - a.downloads);
     return list;
-  }, [q, activeTab, sortBy, grade, subject, chapter, topic, artStyle]);
+  }, [
+    assets,
+    debouncedQ,
+    activeTab,
+    sortBy,
+    grade,
+    stream,
+    subject,
+    chapter,
+    topic,
+    subtopic,
+    artStyle,
+  ]);
 
-  const onReportSubmit = (data: {
-    name: string;
-    contact: string;
-    comment: string;
-    assetId?: string;
-  }) => {
-    console.log("Report submitted", data);
+  // Protected handlers
+  const onFavProtected = (a: Asset) =>
+    ensureAuthed(() => {
+      setFavIds((prev) => {
+        const next = new Set(prev);
+        next.has(a.id) ? next.delete(a.id) : next.add(a.id);
+        return next;
+      });
+    });
+
+  const onReportProtected = (a: Asset) =>
+    ensureAuthed(() => {
+      setReportAsset(a);
+      setReportOpen(true);
+    });
+
+  const onDownloadProtected = (a: Asset) =>
+    ensureAuthed(() => {
+      setAssets((prev) =>
+        prev.map((x) =>
+          x.id === a.id ? { ...x, downloads: x.downloads + 1 } : x
+        )
+      );
+      const link = document.createElement("a");
+      link.href = a.thumb;
+      link.download = `${a.title || "asset"}`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    });
+
+  const onDeleteTemp = (a: Asset) =>
+    ensureAuthed(() => {
+      if (!isAdmin) {
+        alert("Only admins can delete assets.");
+        return;
+      }
+      setAssets((prev) => prev.filter((x) => x.id !== a.id));
+      alert("Deleted from portal only (temporary).");
+    });
+
+  const onDeletePerm = (a: Asset) =>
+    ensureAuthed(() => {
+      if (!isAdmin) {
+        alert("Only admins can delete assets.");
+        return;
+      }
+      console.log(
+        "[Drive] Would delete from:",
+        a.folderPath,
+        "with code:",
+        a.code
+      );
+      setAssets((prev) => prev.filter((x) => x.id !== a.id));
+      alert("Deleted permanently (portal + Drive stub).");
+    });
+
+  // Sign in/out
+  const handleSignedIn = (u: User) => setUser(u);
+  const handleSignOut = () => {
+    setUser(null);
+    setProfileOpen(false);
   };
-
-  const ComingSoon = (
-    <div className="rounded-2xl border bg-white p-8 text-center text-sm text-gray-600">
-      Coming Soon
-    </div>
-  );
 
   return (
     <div>
-      <div className="min-h-screen bg-gradient-to-b from-gray-50 to-white">
+      <div className="min-h-screen w-full overflow-x-clip bg-gradient-to-b from-gray-50 to-white">
         {/* Header */}
         <header className="sticky top-0 z-40 backdrop-blur bg-white/80 border-b">
-          <div className="mx-auto max-w-7xl px-4 py-3 flex items-center gap-3">
+          <div className="w-full px-6 py-3 flex items-center">
             {/* Left: Logo + Tabs */}
             <div className="flex items-center gap-4">
               <div className="flex items-center gap-2">
-                <img
-                  src="/pw-logo.png"
-                  alt="PW Logo"
-                  className="h-9 w-9 rounded-2xl object-contain"
-                />
-                <span className="text-sm font-semibold text-gray-900">
-                  Creative Hub
-                </span>
+                <PhysicsWallahLogo />
               </div>
-
-              {/* Tabs */}
-              <nav className="hidden md:flex items-center gap-1 rounded-xl border bg-white p-1">
+              <nav
+                className="hidden md:flex items-center gap-1 rounded-xl border bg-white p-1"
+                aria-label="Primary"
+              >
                 {(
                   [
                     { key: "images", label: "Images" },
@@ -788,6 +1575,7 @@ const App: React.FC = () => {
                         ? "bg-black text-white"
                         : "text-gray-700 hover:bg-gray-50"
                     }`}
+                    aria-current={activeTab === t.key ? "page" : undefined}
                   >
                     {t.label}
                   </button>
@@ -796,7 +1584,7 @@ const App: React.FC = () => {
             </div>
 
             {/* Center: Search */}
-            <div className="flex-1 max-w-2xl mx-auto">
+            <div className="flex-1 max-w-2xl ">
               <div className="flex items-center gap-2 rounded-2xl border bg-white px-3 py-2">
                 <Search className="h-4 w-4 text-gray-500" />
                 <input
@@ -804,23 +1592,31 @@ const App: React.FC = () => {
                   onChange={(e) => setQ(e.target.value)}
                   placeholder="Search assets, tags, contributors…"
                   className="w-full outline-none text-sm bg-transparent text-gray-900 placeholder:text-gray-400"
+                  aria-label="Search assets"
                 />
               </div>
             </div>
 
-            {/* Right: Upload → (Sign In or Profile) */}
-            <div className="relative flex items-center gap-2">
-              <button
-                onClick={() => setUploadOpen(true)}
-                className="inline-flex items-center gap-2 rounded-xl bg-black text-white text-sm px-3 py-2"
-              >
-                <Upload className="h-4 w-4" /> Upload
-              </button>
-
-              {!user ? (
+            {/* Right: Upload (admins only) + Auth */}
+            <div
+              className="relative flex items-center gap-2 ml-auto"
+              ref={profileRef}
+            >
+              {isAdmin && (
+                <button
+                  onClick={openUpload}
+                  className="inline-flex items-center gap-2 rounded-xl bg-black text-white text-sm px-3 py-2"
+                >
+                  <Upload className="h-4 w-4" /> Upload
+                </button>
+              )}
+              {!isLoggedIn ? (
                 <button
                   className="inline-flex items-center gap-2 rounded-xl border text-sm px-3 py-2"
-                  onClick={() => setUser({ name: "PW User" })}
+                  onClick={() => {
+                    setSignInPrefill(undefined);
+                    setSignInOpen(true);
+                  }}
                 >
                   <LogIn className="h-4 w-4" /> Sign In
                 </button>
@@ -828,24 +1624,22 @@ const App: React.FC = () => {
                 <>
                   <button
                     className="inline-flex items-center gap-2 rounded-xl border text-sm px-3 py-2"
-                    onClick={() => setProfileOpen(!profileOpen)}
+                    onClick={() => setProfileOpen((v) => !v)}
+                    aria-haspopup="menu"
+                    aria-expanded={profileOpen}
                   >
-                    {user.name}
+                    {user?.name} ({user?.role})
                   </button>
-
                   {profileOpen && (
-                    <div className="absolute right-0 top-10 w-40 rounded-xl border bg-white shadow">
-                      <button className="w-full text-left text-sm px-3 py-2 hover:bg-gray-50 inline-flex items-center gap-2">
-                        <Heart className="h-4 w-4" /> Fav
-                      </button>
+                    <div className="absolute right-0 top-10 w-56 rounded-xl border bg-white shadow">
+                      <div className="px-3 py-2 text-xs text-gray-500 border-b">
+                        {user?.email}
+                      </div>
                       <button
-                        className="w-full text-left text-sm px-3 py-2 hover:bg-gray-50"
-                        onClick={() => {
-                          setUser(null);
-                          setProfileOpen(false);
-                        }}
+                        className="w-full text-left text-sm px-3 py-2 hover:bg-gray-50 inline-flex items-center gap-2"
+                        onClick={handleSignOut}
                       >
-                        Logout
+                        Sign Out
                       </button>
                     </div>
                   )}
@@ -856,73 +1650,94 @@ const App: React.FC = () => {
         </header>
 
         {/* Content */}
-        <main className="mx-auto max-w-7xl px-4 py-6 grid grid-cols-12 gap-6">
+        <main className="w-full px-6 py-6 grid grid-cols-12 gap-6">
           <aside className="col-span-12 md:col-span-3 lg:col-span-3 space-y-4">
             <FiltersPanel
               activeTab={activeTab}
               grade={grade}
               setGrade={setGrade}
+              stream={stream}
+              setStream={setStream}
               subject={subject}
               setSubject={setSubject}
               chapter={chapter}
               setChapter={setChapter}
               topic={topic}
               setTopic={setTopic}
+              subtopic={subtopic}
+              setSubtopic={setSubtopic}
               artStyle={artStyle}
               setArtStyle={setArtStyle}
+              templateStyle={templateStyle}
+              setTemplateStyle={setTemplateStyle}
+              sortBy={sortBy}
+              setSortBy={setSortBy}
             />
             <div className="rounded-2xl border bg-white p-4">
               <p className="text-xs text-gray-500">
-                Tip: Use filters to narrow down results.
+                {isLoggedIn
+                  ? isAdmin
+                    ? "You are an Admin. You can upload and delete assets."
+                    : "You are signed in. You can view, like, report, and download."
+                  : "Sign in with your @pw.live email to like, report, download. Only Admins can upload/delete."}
               </p>
             </div>
           </aside>
 
           <section className="col-span-12 md:col-span-9 lg:col-span-9">
             <div className="mb-4 flex items-center justify-between gap-3">
-              <p className="text-sm text-gray-600">
+              <p className="text-sm text-gray-600" aria-live="polite">
                 Showing <span className="font-medium">{filtered.length}</span>{" "}
-                results
+                result{filtered.length !== 1 ? "s" : ""}
               </p>
-              <div className="flex items-center gap-2">
-                <div className="flex items-center gap-1 rounded-xl border bg-white p-1">
-                  <button
-                    onClick={() => setView("grid")}
-                    className={`px-3 py-1.5 text-xs rounded-lg ${
-                      view === "grid" ? "bg-black text-white" : "text-gray-700"
-                    }`}
-                  >
-                    Grid
-                  </button>
-                  <button
-                    onClick={() => setView("list")}
-                    className={`px-3 py-1.5 text-xs rounded-lg ${
-                      view === "list" ? "bg-black text-white" : "text-gray-700"
-                    }`}
-                  >
-                    List
-                  </button>
-                </div>
-                <div className="relative">
-                  <select
-                    value={sortBy}
-                    onChange={(e) => setSortBy(e.target.value as any)}
-                    className="appearance-none pl-3 pr-8 py-1.5 text-xs rounded-xl border bg-white"
-                  >
-                    <option>Newest</option>
-                    <option>Oldest</option>
-                    <option>Popular</option>
-                  </select>
-                  <ChevronDown className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-500" />
-                </div>
+              <div
+                className="flex items-center gap-1 rounded-xl border bg-white p-1"
+                role="tablist"
+                aria-label="View mode"
+              >
+                <button
+                  onClick={() => setView("grid")}
+                  className={`px-3 py-1.5 text-xs rounded-lg ${
+                    view === "grid" ? "bg-black text-white" : "text-gray-700"
+                  }`}
+                  aria-selected={view === "grid"}
+                >
+                  Grid
+                </button>
+                <button
+                  onClick={() => setView("list")}
+                  className={`px-3 py-1.5 text-xs rounded-lg ${
+                    view === "list" ? "bg-black text-white" : "text-gray-700"
+                  }`}
+                  aria-selected={view === "list"}
+                >
+                  List
+                </button>
               </div>
             </div>
 
-            {activeTab !== "images" ? (
+            {/* Empty state */}
+            {filtered.length === 0 && (
               <div className="rounded-2xl border bg-white p-8 text-center text-sm text-gray-600">
-                Coming Soon
+                {assets.length === 0 ? (
+                  <>
+                    <p>No assets yet.</p>
+                    {isAdmin ? (
+                      <p className="mt-1">
+                        Use the Upload button to add your first asset.
+                      </p>
+                    ) : (
+                      <p className="mt-1">Ask an Admin to upload assets.</p>
+                    )}
+                  </>
+                ) : (
+                  <p>No results match your filters.</p>
+                )}
               </div>
-            ) : (
+            )}
+
+            {/* List */}
+            {filtered.length > 0 && (
               <div
                 className={
                   view === "grid"
@@ -936,14 +1751,31 @@ const App: React.FC = () => {
                     asset={a}
                     view={view}
                     onOpen={setSelected}
-                    onFav={onFav}
+                    onFavClick={onFavProtected}
+                    isFav={favIds.has(a.id)}
                   />
                 ))}
               </div>
             )}
 
+            {/* Guide */}
             <div className="mt-8">
-              <Guide />
+              <div className="rounded-2xl border bg-white p-4 text-sm text-gray-700">
+                <h3 className="font-semibold mb-2">How to use this portal</h3>
+                <ol className="list-decimal ml-5 space-y-1">
+                  <li>Search or browse assets.</li>
+                  <li>Apply filters and choose a sort option.</li>
+                  <li>Click an asset to view details.</li>
+                  <li>Download or mark as Fav.</li>
+                  <li>Upload via drag-and-drop or the Upload button.</li>
+                </ol>
+                <div className="mt-3 border-t pt-3 text-xs text-gray-600">
+                  <p>
+                    <strong>Permissions:</strong> • Guests: view & search • PW
+                    users: view/like/report/download • Admins: +upload/delete
+                  </p>
+                </div>
+              </div>
             </div>
           </section>
         </main>
@@ -954,8 +1786,13 @@ const App: React.FC = () => {
             <DetailDrawer
               asset={selected}
               onClose={() => setSelected(null)}
-              onFav={onFav}
-              onReport={onReport}
+              onFavProtected={onFavProtected}
+              onReportProtected={onReportProtected}
+              onDownloadProtected={onDownloadProtected}
+              onDeleteTemp={onDeleteTemp}
+              onDeletePerm={onDeletePerm}
+              isFav={favIds.has(selected.id)}
+              canDelete={isAdmin}
             />
           )}
         </AnimatePresence>
@@ -964,13 +1801,25 @@ const App: React.FC = () => {
         <UploadModal
           open={uploadOpen}
           onClose={() => setUploadOpen(false)}
-          activeTab={activeTab}
+          onConfirm={(asset) => setAssets((prev) => [asset, ...prev])}
+          currentUser={user as User}
         />
         <ReportModal
           open={reportOpen}
           asset={reportAsset || undefined}
           onClose={() => setReportOpen(false)}
-          onSubmit={onReportSubmit}
+          onSubmit={(data) => {
+            console.log("Report submitted", data);
+            alert("Report submitted. Thank you!");
+          }}
+        />
+        <SignInModal
+          open={signInOpen}
+          onClose={() => setSignInOpen(false)}
+          onSignedIn={(u) => {
+            handleSignedIn(u);
+          }}
+          defaultEmail={signInPrefill}
         />
 
         {/* Footer */}
@@ -983,49 +1832,4 @@ const App: React.FC = () => {
   );
 };
 
-/* =====================================================
-   Simple runtime tests (non-blocking)
-   ===================================================== */
-if (typeof window !== "undefined") {
-  try {
-    const grade9 = MOCK_ASSETS.filter(function (a) {
-      return a.grade === "9";
-    }).length;
-    console.assert(
-      grade9 === 3,
-      "Expected 3 assets for Grade 9, got " + grade9
-    );
-
-    const sub = MOCK_ASSETS.filter(function (a) {
-      return a.grade === "9" && a.subject === "Science";
-    }).length;
-    console.assert(
-      sub === 3,
-      "Expected 3 assets for Grade 9 + Science, got " + sub
-    );
-
-    const chap = MOCK_ASSETS.filter(function (a) {
-      return (
-        a.grade === "9" && a.subject === "Science" && a.chapter === "Tissues"
-      );
-    }).length;
-    console.assert(
-      chap === 3,
-      "Expected 3 assets for Grade 9 + Science + Tissues, got " + chap
-    );
-
-    const bamboo = MOCK_ASSETS.filter(function (a) {
-      return (
-        a.grade === "9" &&
-        a.subject === "Science" &&
-        a.chapter === "Tissues" &&
-        a.topic === "Bamboo"
-      );
-    }).length;
-    console.assert(bamboo === 1, "Expected 1 Bamboo asset, got " + bamboo);
-  } catch (err) {
-    console.error("Runtime tests failed:", err);
-  }
-}
-
-export default App;
+export default CreativeHubDemo;
