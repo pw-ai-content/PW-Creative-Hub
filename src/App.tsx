@@ -1112,6 +1112,9 @@ const UploadModal: React.FC<{
       createdAt: new Date().toISOString(),
       downloads: 0,
       views: 0,
+      dominantColor: "gray", // or pick from a small palette based on subject/style
+      width: 0,
+      height: 0,
       grade,
       stream,
       subject,
