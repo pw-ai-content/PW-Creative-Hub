@@ -16,6 +16,13 @@ import {
   Trash2,
 } from "lucide-react";
 
+// --- import local assets so Vite resolves them correctly ---
+import BambooImg from "./assets/Bamboo.png";
+import CartilageImg from "./assets/cartilage.png";
+import CiliatedImg from "./assets/ciliated_epithelium.png";
+import ControlImg from "./assets/control.png";
+import BrainImg from "./assets/brain.png";
+import BodyImg from "./assets/body.png";
 /** ----------------------------------------------------
  * Physics Wallah Logo (placeholder)
  * Replace with official SVG when available
@@ -55,6 +62,9 @@ export type Asset = {
   uploadedBy: string; // uploader email
   createdAt: string; // ISO
   downloads: number;
+  dominantColor: string;
+  width: number;
+  height: number;
   views: number;
   // taxonomy (mostly for images)
   grade?: string; // "9" | "10" | "11" | "12"
@@ -82,6 +92,121 @@ const MOCK_CREDENTIALS: Record<string, { password: string; name: string }> = {
   "editor@pw.live": { password: "pw12345", name: "Editor" },
 };
 
+/* =====================================================
+   Data
+   ===================================================== */
+const CURR_DATE = new Date().toISOString();
+
+const MOCK_ASSETS: Asset[] = [
+  {
+    id: "asset_bamboo",
+    title: "Bamboo (Plant Tissue context)",
+    type: "photo",
+    thumb: BambooImg, // <<< changed
+    dominantColor: "emerald",
+    width: 3000,
+    height: 2000,
+    tags: ["grade10", "science", "tissues", "plant", "bamboo"],
+    uploadedBy: "Kanak Ahuja",
+    createdAt: CURR_DATE,
+    downloads: 120,
+    views: 980,
+    grade: "10",
+    subject: "Science",
+    chapter: "Tissues",
+    topic: "Bamboo",
+  },
+  {
+    id: "asset_cartilage",
+    title: "Cartilage (Connective Tissue)",
+    type: "photo",
+    thumb: CartilageImg, // <<< changed
+    dominantColor: "amber",
+    width: 3000,
+    height: 2000,
+    tags: ["grade9", "science", "tissues", "connective", "cartilage"],
+    uploadedBy: "Teacher",
+    createdAt: CURR_DATE,
+    downloads: 105,
+    views: 870,
+    grade: "9",
+    subject: "Science",
+    chapter: "Tissues",
+    topic: "Cartilage",
+  },
+  {
+    id: "asset_ciliated",
+    title: "Ciliated Epithelium (Epithelial Tissue)",
+    type: "photo",
+    thumb: CiliatedImg, // <<< changed
+    dominantColor: "violet",
+    width: 3000,
+    height: 2000,
+    tags: ["grade9", "science", "tissues", "epithelial", "ciliated_epithelium"],
+    uploadedBy: "Kanak",
+    createdAt: CURR_DATE,
+    downloads: 97,
+    views: 760,
+    grade: "9",
+    subject: "Science",
+    chapter: "Tissues",
+    topic: "Ciliated_epithelium",
+  },
+  {
+    id: "asset_control",
+    title: "Control and Coordination",
+    type: "photo",
+    thumb: ControlImg,
+    dominantColor: "blue",
+    width: 3000,
+    height: 2000,
+    tags: ["grade10", "Biology", "control", "coordination", "nervous system"],
+    uploadedBy: "Admin",
+    createdAt: CURR_DATE,
+    downloads: 45,
+    views: 310,
+    grade: "10",
+    subject: "Biology",
+    chapter: "Control and Coordination",
+    topic: "Nervous System",
+  },
+  {
+    id: "asset_brain",
+    title: "Human Brain",
+    type: "photo",
+    thumb: BrainImg,
+    dominantColor: "pink",
+    width: 3000,
+    height: 2000,
+    tags: ["grade10", "bio", "nervous system", "brain", "CNS"],
+    uploadedBy: "Teacher",
+    createdAt: CURR_DATE,
+    downloads: 53,
+    views: 420,
+    grade: "10",
+    subject: "Biology",
+    chapter: "Control and Coordination",
+    topic: "Brain",
+  },
+  {
+    id: "asset_body",
+    title: "Nervous System in Human Body",
+    type: "photo",
+    thumb: BodyImg,
+    dominantColor: "cyan",
+    width: 3000,
+    height: 2000,
+    tags: ["grade10", "science", "nervous system", "human body", "neurons"],
+    uploadedBy: "Kanak Ahuja",
+    createdAt: CURR_DATE,
+    downloads: 60,
+    views: 500,
+    grade: "10",
+    subject: "Biology",
+    chapter: "Control and Coordination",
+    topic: "Peripheral Nervous System",
+  },
+];
 /* ============================== Small UI helpers ============================== */
 const Badge: React.FC<{ children: React.ReactNode }> = ({ children }) => (
   <span className="inline-block rounded-full border px-2 py-0.5 text-xs text-gray-600 bg-white/60 backdrop-blur">
@@ -128,7 +253,7 @@ const Select: React.FC<{
 /* ============================== Hierarchy data (Filters & Upload) ============================== */
 const SUBJECTS_BY_GRADE: Record<string, string[]> = {
   "9": ["Science"],
-  "10": ["Physics"],
+  "10": ["Biology", "Physics", "Chemistry"],
   "11|Science": ["Physics"],
   "11|Commerce": ["Accountancy"],
   "11|Humanities": ["History"],
@@ -138,7 +263,8 @@ const SUBJECTS_BY_GRADE: Record<string, string[]> = {
 };
 
 const CHAPTERS_BY_SUBJECT: Record<string, string[]> = {
-  "9|Science": ["Motion", "Force & Laws of Motion", "Gravitation"],
+  "9|Science": ["Tissues", "Force & Laws of Motion", "Gravitation"],
+  "10|Biology": ["Control and Coordination"],
   "10|Physics": ["Electricity", "Light", "Human Eye & Colourful World"],
   "11|Science|Physics": ["Laws of Motion", "Work, Energy, Power"],
   "11|Commerce|Accountancy": ["Accounting Equations", "Journal Entries"],
@@ -149,9 +275,11 @@ const CHAPTERS_BY_SUBJECT: Record<string, string[]> = {
 };
 
 const TOPICS_BY_CHAPTER: Record<string, string[]> = {
-  "9|Science|Motion": [
-    "Distance & Displacement",
-    "Speed/Velocity/Acceleration",
+  "9|Science|Tissues": ["Ciliated_epithelium", "Cartilage"],
+  "10|Biology|Control and Coordination": [
+    "Nervous System",
+    "Brain",
+    "Peripheral Nervous System",
   ],
   "10|Physics|Electricity": ["Ohm’s Law", "Series & Parallel Circuits"],
   "11|Science|Physics|Laws of Motion": ["Newton’s Laws", "Friction"],
@@ -614,7 +742,7 @@ const SignInModal: React.FC<{
 
   return (
     <div
-      className="fixed inset-0 z-50"
+      className="fixed inset-0 z-[80]"
       role="dialog"
       aria-modal="true"
       aria-label="Sign in"
@@ -726,7 +854,7 @@ const ReportModal: React.FC<{
 
   return (
     <div
-      className="fixed inset-0 z-50"
+      className="fixed inset-0 z-[80]"
       role="dialog"
       aria-modal="true"
       aria-label="Report asset"
@@ -819,7 +947,7 @@ const DeleteChooserModal: React.FC<{
   if (!open) return null;
   return (
     <div
-      className="fixed inset-0 z-[60]"
+      className="fixed inset-0 z-[80]"
       role="dialog"
       aria-modal="true"
       aria-label="Delete options"
@@ -961,7 +1089,7 @@ const UploadModal: React.FC<{
     chapter: !!chapter,
     topic: !!topic,
     artStyle: !!artStyle,
-    tags: tags.length >= 3 && tags.length <= 10,
+    tags: tags.length >= 1 && tags.length <= 10,
   };
   const allValid = Object.values(req).every(Boolean);
 
@@ -1001,7 +1129,7 @@ const UploadModal: React.FC<{
 
   return (
     <div
-      className="fixed inset-0 z-50"
+      className="fixed inset-0 z-[80]"
       role="dialog"
       aria-modal="true"
       aria-label="Upload image"
@@ -1027,7 +1155,7 @@ const UploadModal: React.FC<{
           </div>
 
           {/* Scrollable content area */}
-          <div className="mt-4 space-y-3 max-h-[70vh] overflow-y-auto pr-1">
+          <div className="mt-4 space-y-3 pr-1">
             <label className="block text-sm text-gray-700">Choose a file</label>
             <input
               type="file"
@@ -1153,7 +1281,7 @@ const UploadModal: React.FC<{
             </div>
             <div>
               <label className="block text-xs mb-1">
-                Tags (comma-separated, 3–10)
+                Tags (comma-separated, 1–10)
               </label>
               <input
                 value={tagsInput}
@@ -1167,7 +1295,7 @@ const UploadModal: React.FC<{
                   !req.tags ? "text-red-600" : "text-gray-500"
                 }`}
               >
-                Current: {tags.length}. Min 3, max 10.
+                Current: {tags.length}. Min 1, max 10.
               </p>
             </div>
 
@@ -1235,7 +1363,7 @@ const DetailDrawer: React.FC<{
   const uploadedDate = new Date(asset.createdAt).toLocaleDateString();
 
   return (
-    <div className="fixed inset-0 flex items-center justify-center">
+    <div className="fixed inset-0 z-[80] flex items-center justify-center">
       <div className="absolute inset-0 bg-black/40" onClick={onClose} />
       <motion.div
         initial={{ x: "100%" }}
@@ -1366,7 +1494,7 @@ const CreativeHubDemo: React.FC = () => {
   const [templateStyle, setTemplateStyle] = useState("");
 
   // Assets start empty (no mocks)
-  const [assets, setAssets] = useState<Asset[]>([]);
+  const [assets, setAssets] = useState<Asset[]>([...MOCK_ASSETS]);
   const [selected, setSelected] = useState<Asset | null>(null);
 
   // Upload/report
@@ -1582,10 +1710,9 @@ const CreativeHubDemo: React.FC = () => {
                 ))}
               </nav>
             </div>
-
             {/* Center: Search */}
-            <div className="flex-1 max-w-2xl ">
-              <div className="flex items-center gap-2 rounded-2xl border bg-white px-3 py-2">
+            <div className="flex flex-1 justify-center">
+              <div className="w-full max-w-2xl flex items-center gap-2 rounded-2xl border bg-white px-3 py-2">
                 <Search className="h-4 w-4 text-gray-500" />
                 <input
                   value={q}
