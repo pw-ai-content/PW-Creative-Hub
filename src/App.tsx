@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import GoogleSignIn from "./components/GoogleSignIn";
+import type { AxiosResponse } from "axios";
 import { api } from "./api";
 import {
   Search,
@@ -1578,7 +1579,9 @@ const CreativeHubDemo: React.FC = () => {
   useEffect(() => {
     api
       .get("/auth/me")
-      .then(({ data }) => setUser(data.user))
+      .then((res: AxiosResponse<{ user: User | null }>) =>
+        setUser(res.data.user)
+      )
       .catch(() => setUser(null));
   }, []);
 
