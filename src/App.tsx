@@ -1,5 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import GoogleSignIn from "./components/GoogleSignIn";
+import { api } from "./api";
 import {
   Search,
   Upload,
@@ -14,15 +16,17 @@ import {
   Heart,
   Flag,
   Trash2,
+  Check,
+  AlertTriangle,
 } from "lucide-react";
 
 // --- import local assets so Vite resolves them correctly ---
 import BambooImg from "./assets/Bamboo.png";
 import CartilageImg from "./assets/cartilage.png";
 import CiliatedImg from "./assets/ciliated_epithelium.png";
-import ControlImg from "./assets/control.png";
-import BrainImg from "./assets/brain.png";
-import BodyImg from "./assets/body.png";
+// import ControlImg from "./assets/control.png";
+// import BrainImg from "./assets/brain.png";
+// import BodyImg from "./assets/body.png";
 /** ----------------------------------------------------
  * Physics Wallah Logo (placeholder)
  * Replace with official SVG when available
@@ -53,6 +57,22 @@ const PhysicsWallahLogo: React.FC<React.SVGProps<SVGSVGElement>> = (props) => (
 );
 
 /* ============================== Types ============================== */
+export type Review = {
+  status?: "allotted" | "commented" | "passed";
+  assignedTo?: string;
+  assignedToName?: string;
+  comment?: string;
+  reviewedBy?: string;
+  reviewedByName?: string;
+  reviewedAt?: string; // ISO
+};
+
+type SMEApproval = {
+  status: "yellow" | "green";
+  approvedByEmail?: string;
+  approvedAt?: string; // ISO
+};
+
 export type Asset = {
   id: string;
   title: string; // Saved as: BaseTitle[CODE] V1
@@ -60,6 +80,8 @@ export type Asset = {
   thumb: string; // object URL or CDN URL
   tags: string[]; // 3–10 tags for images
   uploadedBy: string; // uploader email
+  uploaderRole?: "admin" | "sme" | "user";
+
   createdAt: string; // ISO
   downloads: number;
   dominantColor: string;
@@ -77,20 +99,13 @@ export type Asset = {
   version?: string; // V1 default
   code?: string; // 9-char code GG SSS CC AA
   folderPath?: string; // grade-subject-chapter-topic-subtopic
+  review?: Review;
+  approval?: SMEApproval;
 };
 
 /* ============================== Auth (mock) ============================== */
 // Only allow @pw.live emails. Define admins explicitly.
-type User = { email: string; name: string; role: "admin" | "user" };
-
-const ADMIN_EMAILS = new Set<string>(["admin@pw.live", "design.lead@pw.live"]);
-
-// In-memory mock directory. Domain enforcement still applies.
-const MOCK_CREDENTIALS: Record<string, { password: string; name: string }> = {
-  "admin@pw.live": { password: "admin123", name: "Admin" },
-  "teacher1@pw.live": { password: "pw12345", name: "Teacher 1" },
-  "editor@pw.live": { password: "pw12345", name: "Editor" },
-};
+type User = { email: string; name: string; role: "admin" | "sme" | "user" };
 
 /* =====================================================
    Data
@@ -115,6 +130,7 @@ const MOCK_ASSETS: Asset[] = [
     subject: "Science",
     chapter: "Tissues",
     topic: "Bamboo",
+    approval: { status: "yellow" },
   },
   {
     id: "asset_cartilage",
@@ -133,6 +149,7 @@ const MOCK_ASSETS: Asset[] = [
     subject: "Science",
     chapter: "Tissues",
     topic: "Cartilage",
+    approval: { status: "yellow" },
   },
   {
     id: "asset_ciliated",
@@ -151,61 +168,62 @@ const MOCK_ASSETS: Asset[] = [
     subject: "Science",
     chapter: "Tissues",
     topic: "Ciliated_epithelium",
+    approval: { status: "yellow" },
   },
-  {
-    id: "asset_control",
-    title: "Control and Coordination",
-    type: "photo",
-    thumb: ControlImg,
-    dominantColor: "blue",
-    width: 3000,
-    height: 2000,
-    tags: ["grade10", "Biology", "control", "coordination", "nervous system"],
-    uploadedBy: "Admin",
-    createdAt: CURR_DATE,
-    downloads: 45,
-    views: 310,
-    grade: "10",
-    subject: "Biology",
-    chapter: "Control and Coordination",
-    topic: "Nervous System",
-  },
-  {
-    id: "asset_brain",
-    title: "Human Brain",
-    type: "photo",
-    thumb: BrainImg,
-    dominantColor: "pink",
-    width: 3000,
-    height: 2000,
-    tags: ["grade10", "bio", "nervous system", "brain", "CNS"],
-    uploadedBy: "Teacher",
-    createdAt: CURR_DATE,
-    downloads: 53,
-    views: 420,
-    grade: "10",
-    subject: "Biology",
-    chapter: "Control and Coordination",
-    topic: "Brain",
-  },
-  {
-    id: "asset_body",
-    title: "Nervous System in Human Body",
-    type: "photo",
-    thumb: BodyImg,
-    dominantColor: "cyan",
-    width: 3000,
-    height: 2000,
-    tags: ["grade10", "science", "nervous system", "human body", "neurons"],
-    uploadedBy: "Kanak Ahuja",
-    createdAt: CURR_DATE,
-    downloads: 60,
-    views: 500,
-    grade: "10",
-    subject: "Biology",
-    chapter: "Control and Coordination",
-    topic: "Peripheral Nervous System",
-  },
+  // {
+  //   id: "asset_control",
+  //   title: "Control and Coordination",
+  //   type: "photo",
+  //   thumb: ControlImg,
+  //   dominantColor: "blue",
+  //   width: 3000,
+  //   height: 2000,
+  //   tags: ["grade10", "Biology", "control", "coordination", "nervous system"],
+  //   uploadedBy: "Admin",
+  //   createdAt: CURR_DATE,
+  //   downloads: 45,
+  //   views: 310,
+  //   grade: "10",
+  //   subject: "Biology",
+  //   chapter: "Control and Coordination",
+  //   topic: "Nervous System",
+  // },
+  // {
+  //   id: "asset_brain",
+  //   title: "Human Brain",
+  //   type: "photo",
+  //   thumb: BrainImg,
+  //   dominantColor: "pink",
+  //   width: 3000,
+  //   height: 2000,
+  //   tags: ["grade10", "bio", "nervous system", "brain", "CNS"],
+  //   uploadedBy: "Teacher",
+  //   createdAt: CURR_DATE,
+  //   downloads: 53,
+  //   views: 420,
+  //   grade: "10",
+  //   subject: "Biology",
+  //   chapter: "Control and Coordination",
+  //   topic: "Brain",
+  // },
+  // {
+  //   id: "asset_body",
+  //   title: "Nervous System in Human Body",
+  //   type: "photo",
+  //   thumb: BodyImg,
+  //   dominantColor: "cyan",
+  //   width: 3000,
+  //   height: 2000,
+  //   tags: ["grade10", "science", "nervous system", "human body", "neurons"],
+  //   uploadedBy: "Kanak Ahuja",
+  //   createdAt: CURR_DATE,
+  //   downloads: 60,
+  //   views: 500,
+  //   grade: "10",
+  //   subject: "Biology",
+  //   chapter: "Control and Coordination",
+  //   topic: "Peripheral Nervous System",
+  // },
 ];
 /* ============================== Small UI helpers ============================== */
 const Badge: React.FC<{ children: React.ReactNode }> = ({ children }) => (
@@ -213,6 +231,76 @@ const Badge: React.FC<{ children: React.ReactNode }> = ({ children }) => (
     {children}
   </span>
 );
+
+const StatusBadge: React.FC<{ status?: Review["status"] }> = ({ status }) => {
+  if (!status) return null;
+  const cfg = {
+    passed: {
+      label: "Passed",
+      cls: "bg-green-50 text-green-700 border-green-200",
+    },
+    commented: {
+      label: "Comment added",
+      cls: "bg-amber-50 text-amber-700 border-amber-200",
+    },
+    allotted: {
+      label: "Allotted",
+      cls: "bg-blue-50 text-blue-700 border-blue-200",
+    },
+  } as const;
+  const s = cfg[status];
+  return (
+    <span
+      className={`inline-block rounded-full border px-2 py-0.5 text-[10px] ${s.cls}`}
+    >
+      {s.label}
+    </span>
+  );
+};
+
+const ApprovalPill: React.FC<{
+  approval?: SMEApproval;
+  canToggle?: boolean;
+  onToggle?: () => void;
+}> = ({ approval, canToggle, onToggle }) => {
+  const isGreen = approval?.status === "green";
+  const cls = isGreen
+    ? "bg-green-50 text-green-700 border-green-200"
+    : "bg-amber-50 text-amber-700 border-amber-200";
+  const Icon = isGreen ? Check : AlertTriangle;
+  const label = isGreen ? "SME Approved" : "Not approved";
+
+  const shared =
+    "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium";
+
+  if (canToggle) {
+    return (
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          onToggle?.();
+        }}
+        aria-pressed={isGreen}
+        title={
+          isGreen
+            ? "Click to mark as NOT approved"
+            : "Click to mark as SME approved"
+        }
+        className={`${shared} ${cls}`}
+      >
+        <Icon className="h-3 w-3" />
+        {label}
+      </button>
+    );
+  }
+  return (
+    <span className={`${shared} ${cls}`} title={label}>
+      <Icon className="h-3 w-3" />
+      {label}
+    </span>
+  );
+};
 
 const FieldError: React.FC<{ show?: boolean; msg?: string }> = ({
   show,
@@ -363,14 +451,66 @@ export const buildCode = (
   }
 })();
 
+// ==== REPORT FORM CONFIG ====
+const FORM_BASE =
+  "https://docs.google.com/forms/d/e/1FAIpQLScVohl7aCCIeVxAmLzWRzk_t6b_aGmOlIwON91DF8blRXBtMg/viewform";
+
+// Map your Google Form entry IDs (from your prefilled link)
+const FORM_ENTRY_KEYS = {
+  title: "entry.2084242084", // Image Title
+  code: "entry.1107417352", // Asset Code (we'll send CODE_V1)
+  email: "entry.1200283363", // Email (optional if Form collects email automatically)
+  details: "entry.275844938", // Details (optional prefill)
+} as const;
+
+// Build the prefilled URL for a given asset
+function buildReportFormUrl(asset: Asset, userEmail?: string) {
+  const params = new URLSearchParams();
+  params.set("usp", "pp_url");
+
+  // Derive CODE_V1 (or use what's on the asset)
+  let code = asset.code || "";
+  if (!code) {
+    const m = asset.title.match(/\[([A-Z0-9]{9})\]/); // e.g. "...[10SCI01PX] V1"
+    if (m) code = m[1];
+  }
+  const version =
+    asset.version || (asset.title.match(/\bV(\d+)\b/i)?.[0] ?? "V1");
+  const codeWithVersion = code && version ? `${code}_${version}` : code;
+
+  if (FORM_ENTRY_KEYS.title && asset.title)
+    params.set(FORM_ENTRY_KEYS.title, asset.title);
+  if (FORM_ENTRY_KEYS.code && codeWithVersion)
+    params.set(FORM_ENTRY_KEYS.code, codeWithVersion);
+  if (FORM_ENTRY_KEYS.email && userEmail)
+    params.set(FORM_ENTRY_KEYS.email, userEmail);
+  // (Optional) seed details
+  // if (FORM_ENTRY_KEYS.details)
+  //   params.set(FORM_ENTRY_KEYS.details, `Issue with: ${asset.title}`);
+
+  return `${FORM_BASE}?${params.toString()}`;
+}
+
 /* ============================== Asset Card ============================== */
 const AssetCard: React.FC<{
   asset: Asset;
   view: "grid" | "list";
   onOpen: (a: Asset) => void;
   onFavClick: (a: Asset) => void;
+  onReportClick: (a: Asset) => void; // keep
+  onApprovalToggle?: (a: Asset) => void; // NEW
   isFav: boolean;
-}> = ({ asset, view, onOpen, onFavClick, isFav }) => {
+  viewerRole?: "admin" | "sme" | "user";
+}> = ({
+  asset,
+  view,
+  onOpen,
+  onFavClick,
+  onReportClick,
+  onApprovalToggle,
+  isFav,
+  viewerRole,
+}) => {
   const TypeIcon =
     asset.type === "video"
       ? Film
@@ -379,6 +519,7 @@ const AssetCard: React.FC<{
       : asset.type === "vector"
       ? GridIcon
       : ImageIcon;
+
   return (
     <motion.div
       layout
@@ -387,19 +528,35 @@ const AssetCard: React.FC<{
         view === "list" ? "flex" : ""
       }`}
     >
-      <button
-        onClick={() => onOpen(asset)}
+      {/* Thumbnail with overlay area */}
+      <div
         className={`${
           view === "list" ? "w-48" : "w-full"
-        } aspect-[3/2] overflow-hidden bg-gray-100`}
-        aria-label={`Open ${asset.title}`}
+        } aspect-[3/2] relative bg-gray-100 overflow-hidden`}
       >
-        <img
-          src={asset.thumb}
-          alt={asset.title}
-          className="h-full w-full object-cover"
-        />
-      </button>
+        <button
+          onClick={() => onOpen(asset)}
+          className="absolute inset-0 w-full h-full"
+          aria-label={`Open ${asset.title}`}
+        >
+          <img
+            src={asset.thumb}
+            alt={asset.title}
+            className="h-full w-full object-cover"
+          />
+        </button>
+
+        {/* SME approval pill (toggle for SMEs only) */}
+        <div className="absolute left-2 top-2 z-10">
+          <ApprovalPill
+            approval={asset.approval}
+            canToggle={viewerRole === "sme"}
+            onToggle={() => onApprovalToggle?.(asset)}
+          />
+        </div>
+      </div>
+
+      {/* Body */}
       <div className="p-3 flex-1 flex flex-col gap-2">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -407,6 +564,7 @@ const AssetCard: React.FC<{
             <h3 className="text-sm font-medium text-gray-900 line-clamp-1">
               {asset.title}
             </h3>
+            <StatusBadge status={asset.review?.status} />
           </div>
           <div className="flex items-center gap-2">
             <button
@@ -420,13 +578,42 @@ const AssetCard: React.FC<{
               <Heart className={`h-3 w-3 ${isFav ? "fill-current" : ""}`} />{" "}
               {isFav ? "Fav’d" : "Fav"}
             </button>
+
+            {/* Report button on card */}
+            <button
+              onClick={() => onReportClick(asset)}
+              className="px-2 py-1 text-xs rounded-lg border inline-flex items-center gap-1"
+              title="Report this asset"
+            >
+              <Flag className="h-3 w-3" /> Report
+            </button>
           </div>
         </div>
+
         <div className="flex flex-wrap gap-1">
           {asset.tags.slice(0, 3).map((t) => (
             <Badge key={t}>{t}</Badge>
           ))}
         </div>
+
+        {/* SME approval messaging */}
+        {asset.approval?.status === "yellow" ? (
+          <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 text-amber-800 text-xs px-3 py-2">
+            Use this image at your own risk — not approved by SME.
+          </div>
+        ) : asset.approval?.status === "green" ? (
+          <div className="mt-2 text-xs text-green-700">
+            Approved by{" "}
+            <span className="font-medium">
+              {asset.approval.approvedByEmail}
+            </span>{" "}
+            on{" "}
+            {asset.approval.approvedAt
+              ? new Date(asset.approval.approvedAt).toLocaleString()
+              : ""}
+          </div>
+        ) : null}
+
         <div className="mt-auto flex items-center justify-between text-xs text-gray-500">
           <span>By {asset.uploadedBy}</span>
           <span>{new Date(asset.createdAt).toLocaleDateString()}</span>
@@ -698,11 +885,7 @@ const SignInModal: React.FC<{
   onClose: () => void;
   onSignedIn: (u: User) => void;
   defaultEmail?: string;
-}> = ({ open, onClose, onSignedIn, defaultEmail }) => {
-  const [email, setEmail] = useState(defaultEmail || "");
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState<string | null>(null);
-
+}> = ({ open, onClose, onSignedIn }) => {
   useEffect(() => {
     if (!open) return;
     const onEsc = (e: KeyboardEvent) => {
@@ -712,33 +895,7 @@ const SignInModal: React.FC<{
     return () => window.removeEventListener("keydown", onEsc);
   }, [open, onClose]);
 
-  useEffect(() => {
-    if (!open) {
-      setError(null);
-      setPassword("");
-    }
-  }, [open]);
   if (!open) return null;
-
-  const submit = (e?: React.FormEvent) => {
-    e?.preventDefault();
-    setError(null);
-    const domainOk = /@pw\.live$/i.test(email.trim());
-    if (!domainOk) {
-      setError("Only @pw.live accounts can sign in.");
-      return;
-    }
-    const creds = MOCK_CREDENTIALS[email.trim().toLowerCase()];
-    if (!creds || creds.password !== password) {
-      setError("Invalid email or password.");
-      return;
-    }
-    const role: User["role"] = ADMIN_EMAILS.has(email.trim().toLowerCase())
-      ? "admin"
-      : "user";
-    onSignedIn({ email: email.trim().toLowerCase(), name: creds.name, role });
-    onClose();
-  };
 
   return (
     <div
@@ -764,164 +921,23 @@ const SignInModal: React.FC<{
               <X className="h-5 w-5" />
             </button>
           </div>
-          <form className="mt-4 space-y-3" onSubmit={submit}>
-            <div>
-              <label className="block text-xs mb-1" htmlFor="email">
-                Email
-              </label>
-              <input
-                id="email"
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="w-full rounded-xl border px-3 py-2 text-sm"
-                placeholder="you@pw.live"
-              />
-            </div>
-            <div>
-              <label className="block text-xs mb-1" htmlFor="password">
-                Password
-              </label>
-              <input
-                id="password"
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="w-full rounded-xl border px-3 py-2 text-sm"
-                placeholder="••••••••"
-              />
-            </div>
-            {error && <p className="text-xs text-red-600">{error}</p>}
-            <div className="mt-2 flex items-center justify-end gap-2">
-              <button
-                type="button"
-                onClick={onClose}
-                className="px-3 py-2 text-sm rounded-xl border"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                className="px-3 py-2 text-sm rounded-xl bg-black text-white"
-              >
-                Sign in
-              </button>
-            </div>
-          </form>
+
+          <div className="mt-4">
+            <p className="text-xs text-gray-600 mb-2">
+              Sign in with your <strong>@pw.live</strong> account
+            </p>
+            <GoogleSignIn
+              onAuthed={(u) => {
+                onSignedIn(u);
+                onClose();
+              }}
+            />
+          </div>
+
           <p className="mt-3 text-[11px] text-gray-500">
             Access is restricted to the pw.live domain. Admins can upload
             assets.
           </p>
-        </motion.div>
-      </div>
-    </div>
-  );
-};
-
-const ReportModal: React.FC<{
-  open: boolean;
-  asset?: Asset | null;
-  onClose: () => void;
-  onSubmit: (data: {
-    name: string;
-    contact: string;
-    comment: string;
-    assetId?: string;
-  }) => void;
-}> = ({ open, asset, onClose, onSubmit }) => {
-  const [name, setName] = useState("");
-  const [contact, setContact] = useState("");
-  const [comment, setComment] = useState("");
-
-  useEffect(() => {
-    if (!open) return;
-    const onEsc = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onEsc);
-    return () => window.removeEventListener("keydown", onEsc);
-  }, [open, onClose]);
-  if (!open) return null;
-
-  const handleSubmit = () => {
-    if (!name || !contact || !comment) return alert("All fields are required");
-    onSubmit({ name, contact, comment, assetId: asset?.id });
-    onClose();
-    setName("");
-    setContact("");
-    setComment("");
-  };
-
-  return (
-    <div
-      className="fixed inset-0 z-[80]"
-      role="dialog"
-      aria-modal="true"
-      aria-label="Report asset"
-    >
-      <div className="fixed inset-0 flex items-center justify-center">
-        <div className="absolute inset-0 bg-black/40" onClick={onClose} />
-        <motion.div
-          initial={{ scale: 0.95, opacity: 0 }}
-          animate={{ scale: 1, opacity: 1 }}
-          className="relative w-full max-w-md rounded-2xl border bg-white p-5 shadow-xl max-h-[70vh] overflow-y-auto"
-        >
-          <div className="flex items-center justify-between">
-            <h3 className="text-base font-semibold text-gray-900">
-              Report asset
-            </h3>
-            <button
-              onClick={onClose}
-              className="p-2 hover:bg-gray-100 rounded-full"
-              aria-label="Close"
-            >
-              <X className="h-5 w-5" />
-            </button>
-          </div>
-          <div className="mt-4 space-y-3">
-            <div>
-              <label className="block text-xs mb-1">Name</label>
-              <input
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                className="w-full rounded-xl border px-3 py-2 text-sm"
-                placeholder="Your name"
-              />
-            </div>
-            <div>
-              <label className="block text-xs mb-1">Contact</label>
-              <input
-                value={contact}
-                onChange={(e) => setContact(e.target.value)}
-                className="w-full rounded-xl border px-3 py-2 text-sm"
-                placeholder="Email or phone"
-              />
-            </div>
-            <div>
-              <label className="block text-xs mb-1">Comment</label>
-              <textarea
-                value={comment}
-                onChange={(e) => setComment(e.target.value)}
-                className="w-full rounded-xl border px-3 py-2 text-sm"
-                rows={4}
-                placeholder="Describe the issue"
-              />
-            </div>
-          </div>
-          <div className="mt-5 flex items-center justify-end gap-2">
-            <button
-              onClick={onClose}
-              className="px-3 py-2 text-sm rounded-xl border"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={handleSubmit}
-              className="px-3 py-2 text-sm rounded-xl bg-black text-white"
-            >
-              Submit
-            </button>
-          </div>
         </motion.div>
       </div>
     </div>
@@ -1109,6 +1125,7 @@ const UploadModal: React.FC<{
       thumb: url,
       tags,
       uploadedBy: currentUser.email,
+      uploaderRole: currentUser.role,
       createdAt: new Date().toISOString(),
       downloads: 0,
       views: 0,
@@ -1124,6 +1141,7 @@ const UploadModal: React.FC<{
       version: "V1",
       code,
       folderPath,
+      approval: { status: "yellow" }, // ← default for new uploads
     };
 
     onConfirm(asset);
@@ -1159,8 +1177,15 @@ const UploadModal: React.FC<{
 
           {/* Scrollable content area */}
           <div className="mt-4 space-y-3 pr-1">
-            <label className="block text-sm text-gray-700">Choose a file</label>
+            <label
+              className="block text-sm text-gray-700"
+              htmlFor="upload-file"
+            >
+              {" "}
+              Choose a file
+            </label>
             <input
+              id="upload-file"
               type="file"
               accept={accept}
               onChange={(e) => {
@@ -1339,8 +1364,12 @@ const DetailDrawer: React.FC<{
   onDownloadProtected: (a: Asset) => void;
   onDeleteTemp: (a: Asset) => void;
   onDeletePerm: (a: Asset) => void;
+  onApprovalToggle: (a: Asset) => void;
+  // ← NEW
+
   isFav: boolean;
   canDelete?: boolean;
+  canApprove?: boolean; // ← NEW (role === "sme")
 }> = ({
   asset,
   onClose,
@@ -1349,8 +1378,10 @@ const DetailDrawer: React.FC<{
   onDownloadProtected,
   onDeleteTemp,
   onDeletePerm,
+  onApprovalToggle,
   isFav,
   canDelete,
+  canApprove,
 }) => {
   const [deleteOpen, setDeleteOpen] = useState(false);
 
@@ -1378,7 +1409,16 @@ const DetailDrawer: React.FC<{
         aria-label={`Details for ${asset.title}`}
       >
         <div className="flex items-center justify-between gap-2">
-          <h3 className="text-lg font-semibold text-gray-900">{asset.title}</h3>
+          <div className="flex items-center gap-3">
+            <h3 className="text-lg font-semibold text-gray-900">
+              {asset.title}
+            </h3>
+            <ApprovalPill
+              approval={asset.approval}
+              canToggle={!!canApprove}
+              onToggle={() => onApprovalToggle(asset)}
+            />
+          </div>
           <div className="flex items-center gap-2">
             <button
               onClick={() => onReportProtected(asset)}
@@ -1418,7 +1458,28 @@ const DetailDrawer: React.FC<{
             {asset.tags.slice(0, 5).map((t) => (
               <Badge key={t}>{t}</Badge>
             ))}
+            <StatusBadge status={asset.review?.status} />
           </div>
+          {canDelete && asset.review?.status && (
+            <p className="mt-1 text-[11px] text-gray-600">
+              {(asset.review.status === "passed" && "Passed") ||
+                (asset.review.status === "commented" && "Commented") ||
+                (asset.review.status === "allotted" && "Allotted")}
+              {asset.review.reviewedByName || asset.review.reviewedBy
+                ? ` by ${
+                    asset.review.reviewedByName || asset.review.reviewedBy
+                  }`
+                : ""}
+              {asset.review.reviewedAt
+                ? ` on ${new Date(
+                    asset.review.reviewedAt
+                  ).toLocaleDateString()}`
+                : ""}
+              {asset.review.status === "commented" && asset.review.comment
+                ? ` — “${asset.review.comment}”`
+                : ""}
+            </p>
+          )}
         </div>
 
         <div className="mt-6 flex items-center gap-3">
@@ -1497,17 +1558,36 @@ const CreativeHubDemo: React.FC = () => {
   const [templateStyle, setTemplateStyle] = useState("");
 
   // Assets start empty (no mocks)
-  const [assets, setAssets] = useState<Asset[]>([...MOCK_ASSETS]);
+  // Assets
+  const [assets, setAssets] = useState<Asset[]>(
+    [...MOCK_ASSETS].map((a) => ({
+      ...a,
+      approval: a.approval ?? { status: "yellow" },
+    }))
+  );
+
   const [selected, setSelected] = useState<Asset | null>(null);
 
   // Upload/report
   const [uploadOpen, setUploadOpen] = useState(false);
-  const [reportOpen, setReportOpen] = useState(false);
-  const [reportAsset, setReportAsset] = useState<Asset | null>(null);
 
   // Favorites
   const [favIds, setFavIds] = useState<Set<string>>(new Set());
 
+  // on mount, fetch session
+  useEffect(() => {
+    api
+      .get("/auth/me")
+      .then(({ data }) => setUser(data.user))
+      .catch(() => setUser(null));
+  }, []);
+
+  // logout handler
+  const handleSignOut = async () => {
+    await api.post("/auth/logout");
+    setUser(null);
+    setProfileOpen(false);
+  };
   // Debounce search
   useEffect(() => {
     const t = setTimeout(() => setDebouncedQ(q.trim().toLowerCase()), 250);
@@ -1573,6 +1653,11 @@ const CreativeHubDemo: React.FC = () => {
         );
       });
 
+    if (user?.role === "sme") {
+      // treat undefined as "admin" so legacy/mocked assets still show
+      list = list.filter((a) => (a.uploaderRole ?? "admin") === "admin");
+    }
+
     // Apply taxonomy filters (only when values are selected)
     if (activeTab === "images") {
       if (grade) list = list.filter((a) => a.grade === grade);
@@ -1607,6 +1692,7 @@ const CreativeHubDemo: React.FC = () => {
     topic,
     subtopic,
     artStyle,
+    user?.role,
   ]);
 
   // Protected handlers
@@ -1619,10 +1705,57 @@ const CreativeHubDemo: React.FC = () => {
       });
     });
 
+  const onToggleApprovalProtected = (a: Asset) =>
+    ensureAuthed(async () => {
+      if (user?.role !== "sme") {
+        alert("Only SMEs can change approval.");
+        return;
+      }
+
+      const nextStatus: "yellow" | "green" =
+        a.approval?.status === "green" ? "yellow" : "green";
+
+      const optimistic: Asset = {
+        ...a,
+        approval:
+          nextStatus === "green"
+            ? {
+                status: "green",
+                approvedByEmail: user.email,
+                approvedAt: new Date().toISOString(),
+              }
+            : { status: "yellow" },
+      };
+
+      // optimistic update
+      setAssets((prev) => prev.map((x) => (x.id === a.id ? optimistic : x)));
+      setSelected((prev) => (prev?.id === a.id ? optimistic : prev));
+
+      try {
+        await api.patch(`/assets/${a.id}/approval`, { status: nextStatus });
+      } catch (err: any) {
+        // If server says forbidden, roll back; otherwise keep optimistic (dev-friendly)
+        const status = err?.response?.status;
+        if (status === 403) {
+          setAssets((prev) => prev.map((x) => (x.id === a.id ? a : x)));
+          setSelected((prev) => (prev?.id === a.id ? a : prev));
+          alert("Only SMEs can change approval.");
+        } else {
+          console.warn(
+            "PATCH /assets/:id/approval failed, keeping optimistic UI.",
+            err
+          );
+          // If you prefer strict rollback instead, uncomment next line and remove the alert above:
+          // setAssets(prev => prev.map(x => (x.id === a.id ? a : x)));
+          // alert("Failed to update approval. Please try again.");
+        }
+      }
+    });
+
   const onReportProtected = (a: Asset) =>
     ensureAuthed(() => {
-      setReportAsset(a);
-      setReportOpen(true);
+      const url = buildReportFormUrl(a, user?.email || undefined);
+      window.open(url, "_blank", "noopener,noreferrer");
     });
 
   const onDownloadProtected = (a: Asset) =>
@@ -1665,13 +1798,8 @@ const CreativeHubDemo: React.FC = () => {
       setAssets((prev) => prev.filter((x) => x.id !== a.id));
       alert("Deleted permanently (portal + Drive stub).");
     });
-
-  // Sign in/out
+  // login handler
   const handleSignedIn = (u: User) => setUser(u);
-  const handleSignOut = () => {
-    setUser(null);
-    setProfileOpen(false);
-  };
 
   return (
     <div>
@@ -1882,7 +2010,10 @@ const CreativeHubDemo: React.FC = () => {
                     view={view}
                     onOpen={setSelected}
                     onFavClick={onFavProtected}
+                    onReportClick={onReportProtected}
+                    onApprovalToggle={onToggleApprovalProtected}
                     isFav={favIds.has(a.id)}
+                    viewerRole={user?.role}
                   />
                 ))}
               </div>
@@ -1923,6 +2054,8 @@ const CreativeHubDemo: React.FC = () => {
               onDeletePerm={onDeletePerm}
               isFav={favIds.has(selected.id)}
               canDelete={isAdmin}
+              canApprove={user?.role === "sme"}
+              onApprovalToggle={onToggleApprovalProtected}
             />
           )}
         </AnimatePresence>
@@ -1934,15 +2067,7 @@ const CreativeHubDemo: React.FC = () => {
           onConfirm={(asset) => setAssets((prev) => [asset, ...prev])}
           currentUser={user as User}
         />
-        <ReportModal
-          open={reportOpen}
-          asset={reportAsset || undefined}
-          onClose={() => setReportOpen(false)}
-          onSubmit={(data) => {
-            console.log("Report submitted", data);
-            alert("Report submitted. Thank you!");
-          }}
-        />
+
         <SignInModal
           open={signInOpen}
           onClose={() => setSignInOpen(false)}
