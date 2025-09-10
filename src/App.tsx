@@ -1034,6 +1034,7 @@ const UploadModal: React.FC<{
   const [subject, setSubject] = useState("");
   const [chapter, setChapter] = useState("");
   const [topic, setTopic] = useState("");
+  const [subTopic, setSubTopic] = useState("");
   const [artStyle, setArtStyle] = useState("");
   const [chapterNo, setChapterNo] = useState("");
   const [tagsInput, setTagsInput] = useState("");
@@ -1050,6 +1051,12 @@ const UploadModal: React.FC<{
       (needsStream ? `${grade}|${stream}|${subject}` : `${grade}|${subject}`) +
         `|${chapter}`
     ] || [];
+
+  // NEW: derive subtopic options from the selected topic
+  const subtopicKey =
+    (needsStream ? `${grade}|${stream}|${subject}` : `${grade}|${subject}`) +
+    `|${chapter}|${topic}`;
+  const subtopicOptions = SUBTOPICS_BY_TOPIC[subtopicKey] || [];
 
   // derived
   const tags = useMemo(
@@ -1105,48 +1112,80 @@ const UploadModal: React.FC<{
     subject: !!subject,
     chapter: !!chapter,
     topic: !!topic,
+    subtopic: !!subTopic, // NEW  ⟵ required by backend
     artStyle: !!artStyle,
     tags: tags.length >= 1 && tags.length <= 10,
   };
   const allValid = Object.values(req).every(Boolean);
 
-  const handleConfirm = () => {
+  // const handleConfirm = () => {
+  //   if (!allValid || !fileObj) return;
+  const handleConfirm = async () => {
     if (!allValid || !fileObj) return;
-    const url = URL.createObjectURL(fileObj);
-    const code = buildCode(grade, subject, chapterNo || "01", artStyle);
-    const finalTitle = `${baseTitle}[${code}] V1`;
-    const folderPath = [grade, subject, chapter, topic]
-      .filter(Boolean)
-      .join("-");
 
-    const asset: Asset = {
-      id: `asset_${Date.now()}`,
-      title: finalTitle,
-      type: "photo",
-      thumb: url,
-      tags,
-      uploadedBy: currentUser.email,
-      uploaderRole: currentUser.role,
-      createdAt: new Date().toISOString(),
-      downloads: 0,
-      views: 0,
-      dominantColor: "gray", // or pick from a small palette based on subject/style
-      width: 0,
-      height: 0,
+    // Build the 'meta' payload the server expects
+    const meta = {
+      title: (baseTitle || "").trim() || topic || subTopic || "Untitled",
       grade,
       stream,
       subject,
       chapter,
       topic,
+      subtopic: subTopic,
       artStyle,
-      version: "V1",
-      code,
-      folderPath,
-      approval: { status: "yellow" }, // ← default for new uploads
+      tags,
+      // (optional) version/code if you already compute them on FE
     };
 
-    onConfirm(asset);
-    onClose();
+    const fd = new FormData();
+    fd.append("file", fileObj);
+    fd.append("meta", JSON.stringify(meta));
+
+    try {
+      const { data } = await api.post("/assets", fd, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+      // Let parent know
+      onConfirm?.(data.item);
+      onClose();
+    } catch (e: any) {
+      alert(e?.response?.data?.error || "Upload failed");
+    }
+    // const url = URL.createObjectURL(fileObj);
+    // const code = buildCode(grade, subject, chapterNo || "01", artStyle);
+    // const finalTitle = `${baseTitle}[${code}] V1`;
+    // const folderPath = [grade, subject, chapter, topic]
+    //   .filter(Boolean)
+    //   .join("-");
+
+    // const asset: Asset = {
+    //   id: `asset_${Date.now()}`,
+    //   title: finalTitle,
+    //   type: "photo",
+    //   thumb: url,
+    //   tags,
+    //   uploadedBy: currentUser.email,
+    //   uploaderRole: currentUser.role,
+    //   createdAt: new Date().toISOString(),
+    //   downloads: 0,
+    //   views: 0,
+    //   dominantColor: "gray", // or pick from a small palette based on subject/style
+    //   width: 0,
+    //   height: 0,
+    //   grade,
+    //   stream,
+    //   subject,
+    //   chapter,
+    //   topic,
+    //   artStyle,
+    //   version: "V1",
+    //   code,
+    //   folderPath,
+    //   approval: { status: "yellow" }, // ← default for new uploads
+    // };
+
+    // onConfirm(asset);
+    // onClose();
   };
 
   return (
@@ -1297,6 +1336,27 @@ const UploadModal: React.FC<{
                 disabled={!chapter}
               />
               <FieldError show={touched.topic && !req.topic} />
+            </div>
+            <div>
+              <label className="block text-xs mb-1">Sub-topic</label>
+              {subtopicOptions.length > 0 ? (
+                <Select
+                  value={subTopic}
+                  onChange={setSubTopic}
+                  options={subtopicOptions}
+                  placeholder="Select Sub-topic"
+                  disabled={!topic}
+                />
+              ) : (
+                <input
+                  value={subTopic}
+                  onChange={(e) => setSubTopic(e.target.value)}
+                  className="w-full rounded-xl border px-3 py-2 text-sm"
+                  placeholder="Type sub-topic"
+                  disabled={!topic}
+                  onBlur={() => markTouched("subtopic")}
+                />
+              )}
             </div>
             <div>
               <label className="block text-xs mb-1">Art Style</label>
@@ -1560,12 +1620,13 @@ const CreativeHubDemo: React.FC = () => {
 
   // Assets start empty (no mocks)
   // Assets
-  const [assets, setAssets] = useState<Asset[]>(
-    [...MOCK_ASSETS].map((a) => ({
-      ...a,
-      approval: a.approval ?? { status: "yellow" },
-    }))
-  );
+  // const [assets, setAssets] = useState<Asset[]>(
+  //   [...MOCK_ASSETS].map((a) => ({
+  //     ...a,
+  //     approval: a.approval ?? { status: "yellow" },
+  //   }))
+  // );
+  const [assets, setAssets] = useState<Asset[]>([]);
 
   const [selected, setSelected] = useState<Asset | null>(null);
 
@@ -1583,6 +1644,17 @@ const CreativeHubDemo: React.FC = () => {
         setUser(res.data.user)
       )
       .catch(() => setUser(null));
+  }, []);
+
+  useEffect(() => {
+    api
+      .get("/assets")
+      .then((res: AxiosResponse<{ items: Asset[] }>) => {
+        setAssets(res.data.items);
+      })
+      .catch((err) => {
+        console.error("GET /assets failed", err);
+      });
   }, []);
 
   // logout handler
@@ -1761,19 +1833,37 @@ const CreativeHubDemo: React.FC = () => {
       window.open(url, "_blank", "noopener,noreferrer");
     });
 
+  // const onDownloadProtected = (a: Asset) =>
+  //   ensureAuthed(() => {
+  //     setAssets((prev) =>
+  //       prev.map((x) =>
+  //         x.id === a.id ? { ...x, downloads: x.downloads + 1 } : x
+  //       )
+  //     );
+  //     const link = document.createElement("a");
+  //     link.href = a.thumb;
+  //     link.download = `${a.title || "asset"}`;
+  //     document.body.appendChild(link);
+  //     link.click();
+  //     document.body.removeChild(link);
+  //   });
+
   const onDownloadProtected = (a: Asset) =>
     ensureAuthed(() => {
+      // optimistic counter
       setAssets((prev) =>
         prev.map((x) =>
           x.id === a.id ? { ...x, downloads: x.downloads + 1 } : x
         )
       );
-      const link = document.createElement("a");
-      link.href = a.thumb;
-      link.download = `${a.title || "asset"}`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+
+      // open the server streaming route in a new tab (cookies included)
+      const base = (api.defaults.baseURL || "").replace(/\/$/, ""); // same base as axios
+      window.open(
+        `${base}/assets/${a.id}/file`,
+        "_blank",
+        "noopener,noreferrer"
+      );
     });
 
   const onDeleteTemp = (a: Asset) =>
@@ -2067,8 +2157,8 @@ const CreativeHubDemo: React.FC = () => {
         <UploadModal
           open={uploadOpen}
           onClose={() => setUploadOpen(false)}
-          onConfirm={(asset) => setAssets((prev) => [asset, ...prev])}
           currentUser={user as User}
+          onConfirm={(created) => setAssets((prev) => [created, ...prev])}
         />
 
         <SignInModal
