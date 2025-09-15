@@ -38,7 +38,7 @@ const PhysicsWallahLogo: React.FC<React.SVGProps<SVGSVGElement>> = (props) => (
     role="img"
     aria-label="Creative Hub"
     height="40"
-    width="auto"
+    // width="auto"
     {...props}
   >
     <g fill="none" fillRule="evenodd">
@@ -131,6 +131,7 @@ const MOCK_ASSETS: Asset[] = [
     subject: "Science",
     chapter: "Tissues",
     topic: "Bamboo",
+    subtopic: "Bamboo",
     approval: { status: "yellow" },
   },
   {
@@ -383,7 +384,7 @@ const TOPICS_BY_CHAPTER: Record<string, string[]> = {
 };
 
 const SUBTOPICS_BY_TOPIC: Record<string, string[]> = {
-  "9|Science|Motion|Speed/Velocity/Acceleration": [
+  "9|Science|Tissues|Ciliated_epithelium": [
     "Average Speed",
     "Uniform vs Non-uniform Motion",
   ],
@@ -521,6 +522,23 @@ const AssetCard: React.FC<{
       ? GridIcon
       : ImageIcon;
 
+  // inside AssetCard component
+  const apiBase = (api.defaults.baseURL || "").replace(/\/$/, "");
+  const fileRoute = `${apiBase}/assets/${asset.id}/file`;
+  const previewSrc = asset.thumb || fileRoute;
+
+  <img
+    src={previewSrc}
+    alt={asset.title}
+    loading="lazy"
+    className="h-full w-full object-cover"
+    onError={(e) => {
+      // if the thumb breaks, use the API file stream
+      const img = e.currentTarget as HTMLImageElement;
+      if (img.src !== fileRoute) img.src = fileRoute;
+    }}
+  />;
+
   return (
     <motion.div
       layout
@@ -541,7 +559,7 @@ const AssetCard: React.FC<{
           aria-label={`Open ${asset.title}`}
         >
           <img
-            src={asset.thumb}
+            src={previewSrc}
             alt={asset.title}
             className="h-full w-full object-cover"
           />
@@ -900,7 +918,7 @@ const SignInModal: React.FC<{
 
   return (
     <div
-      className="fixed inset-0 z-[80]"
+      className="fixed inset-0 z-[110]"
       role="dialog"
       aria-modal="true"
       aria-label="Sign in"
@@ -964,7 +982,7 @@ const DeleteChooserModal: React.FC<{
   if (!open) return null;
   return (
     <div
-      className="fixed inset-0 z-[80]"
+      className="fixed inset-0 z-[100]"
       role="dialog"
       aria-modal="true"
       aria-label="Delete options"
@@ -981,6 +999,7 @@ const DeleteChooserModal: React.FC<{
               <Trash2 className="h-4 w-4" /> Delete asset
             </h3>
             <button
+              type="button"
               onClick={onClose}
               className="p-2 hover:bg-gray-100 rounded-full"
               aria-label="Close"
@@ -1091,6 +1110,7 @@ const UploadModal: React.FC<{
       setSubject("");
       setChapter("");
       setTopic("");
+      setSubTopic("");
       setArtStyle("");
       setChapterNo("");
       setTagsInput("");
@@ -1104,10 +1124,26 @@ const UploadModal: React.FC<{
   const accept = "image/*";
   const validateFile = (file: File) => file.type.startsWith("image/");
 
+  // derive CODE + Title (locked)
+  const code = useMemo(
+    () =>
+      buildCode(
+        grade || "00",
+        subject || "XXX",
+        chapterNo || "01",
+        artStyle || "XX"
+      ),
+    [grade, subject, chapterNo, artStyle]
+  );
+  const derivedTitle = useMemo(
+    () => (subTopic ? `${subTopic}[${code}] V1` : ""),
+    [subTopic, code]
+  );
+
   // validation
   const req = {
     file: !!fileObj,
-    title: !!baseTitle.trim(),
+    title: !!derivedTitle,
     grade: !!grade,
     subject: !!subject,
     chapter: !!chapter,
@@ -1125,7 +1161,7 @@ const UploadModal: React.FC<{
 
     // Build the 'meta' payload the server expects
     const meta = {
-      title: (baseTitle || "").trim() || topic || subTopic || "Untitled",
+      title: derivedTitle || "Untitled",
       grade,
       stream,
       subject,
@@ -1134,6 +1170,8 @@ const UploadModal: React.FC<{
       subtopic: subTopic,
       artStyle,
       tags,
+      code, // optional but useful
+      version: "V1",
       // (optional) version/code if you already compute them on FE
     };
 
@@ -1190,7 +1228,7 @@ const UploadModal: React.FC<{
 
   return (
     <div
-      className="fixed inset-0 z-[80]"
+      className="fixed inset-0 z-[100]"
       role="dialog"
       aria-modal="true"
       aria-label="Upload image"
@@ -1207,6 +1245,7 @@ const UploadModal: React.FC<{
               Upload image
             </h3>
             <button
+              type="button"
               onClick={onClose}
               className="p-2 hover:bg-gray-100 rounded-full"
               aria-label="Close"
@@ -1253,7 +1292,7 @@ const UploadModal: React.FC<{
               msg="Please select an image"
             />
 
-            <div>
+            {/* <div>
               <label className="block text-xs mb-1">Title</label>
               <input
                 value={baseTitle}
@@ -1263,6 +1302,21 @@ const UploadModal: React.FC<{
                 placeholder="Short descriptive title"
               />
               <FieldError show={touched.title && !req.title} />
+            </div> */}
+            <div>
+              <label className="block text-xs mb-1">Title</label>
+              <input
+                value={derivedTitle}
+                readOnly
+                disabled
+                className="w-full rounded-xl border px-3 py-2 text-sm bg-gray-100 text-gray-600"
+                placeholder="Auto-filled after choosing Sub-topic"
+                onBlur={() => markTouched("title")}
+              />
+              <FieldError
+                show={touched.title && !derivedTitle}
+                msg="Title is required"
+              />
             </div>
 
             <div>
@@ -1275,6 +1329,7 @@ const UploadModal: React.FC<{
                   setSubject("");
                   setChapter("");
                   setTopic("");
+                  setSubTopic("");
                 }}
                 options={["9", "10", "11", "12"]}
                 placeholder="Select Grade"
@@ -1291,6 +1346,7 @@ const UploadModal: React.FC<{
                     setSubject("");
                     setChapter("");
                     setTopic("");
+                    setSubTopic("");
                   }}
                   options={[...STREAMS]}
                   placeholder="Select Stream"
@@ -1305,6 +1361,7 @@ const UploadModal: React.FC<{
                   setSubject(v);
                   setChapter("");
                   setTopic("");
+                  setSubTopic("");
                 }}
                 options={subjectOptions}
                 placeholder="Select Subject"
@@ -1319,6 +1376,7 @@ const UploadModal: React.FC<{
                 onChange={(v) => {
                   setChapter(v);
                   setTopic("");
+                  setSubTopic("");
                 }}
                 options={chapterOptions}
                 placeholder="Select Chapter"
@@ -1330,14 +1388,18 @@ const UploadModal: React.FC<{
               <label className="block text-xs mb-1">Topic</label>
               <Select
                 value={topic}
-                onChange={setTopic}
+                onChange={(v) => {
+                  setTopic(v);
+                  setSubTopic(""); // ← clear stale subtopic
+                  markTouched("topic");
+                }}
                 options={topicOptions}
                 placeholder="Select Topic"
                 disabled={!chapter}
               />
               <FieldError show={touched.topic && !req.topic} />
             </div>
-            <div>
+            {/* <div>
               <label className="block text-xs mb-1">Sub-topic</label>
               {subtopicOptions.length > 0 ? (
                 <Select
@@ -1357,7 +1419,32 @@ const UploadModal: React.FC<{
                   onBlur={() => markTouched("subtopic")}
                 />
               )}
+            </div> */}
+            <div>
+              <label className="block text-xs mb-1">Sub-topic</label>
+              <Select
+                value={subTopic}
+                onChange={(v) => {
+                  setSubTopic(v);
+                  markTouched("subtopic"); // ensure error visibility if cleared later
+                }}
+                options={subtopicOptions}
+                placeholder={
+                  subtopicOptions.length
+                    ? "Select Sub-topic"
+                    : "No sub-topics available"
+                }
+                disabled={!topic || subtopicOptions.length === 0}
+              />
+              <FieldError show={touched.subtopic && !subTopic} />
+              {topic && subtopicOptions.length === 0 && (
+                <p className="mt-1 text-[11px] text-amber-700">
+                  No sub-topics configured for this Topic. Please add taxonomy
+                  first.
+                </p>
+              )}
             </div>
+
             <div>
               <label className="block text-xs mb-1">Art Style</label>
               <Select
@@ -1397,6 +1484,7 @@ const UploadModal: React.FC<{
 
           <div className="mt-5 flex items-center justify-end gap-2">
             <button
+              type="button"
               onClick={onClose}
               className="px-3 py-2 text-sm rounded-xl border"
             >
@@ -1456,6 +1544,19 @@ const DetailDrawer: React.FC<{
 
   if (!asset) return null;
   const uploadedDate = new Date(asset.createdAt).toLocaleDateString();
+  const apiBase = (api.defaults.baseURL || "").replace(/\/$/, "");
+  const fileRoute = `${apiBase}/assets/${asset.id}/file`;
+  const detailSrc = asset.thumb || fileRoute;
+
+  <img
+    src={detailSrc}
+    alt={asset.title}
+    className="w-full h-full object-cover"
+    onError={(e) => {
+      const img = e.currentTarget as HTMLImageElement;
+      if (img.src !== fileRoute) img.src = fileRoute;
+    }}
+  />;
 
   return (
     <div className="fixed inset-0 z-[80] flex items-center justify-center">
@@ -1489,6 +1590,7 @@ const DetailDrawer: React.FC<{
               <Flag className="h-4 w-4" />
             </button>
             <button
+              type="button"
               onClick={onClose}
               className="p-2 hover:bg-gray-100 rounded-full"
               aria-label="Close details"
@@ -1500,7 +1602,7 @@ const DetailDrawer: React.FC<{
 
         <div className="mt-4 rounded-xl overflow-hidden border bg-gray-100 aspect-[3/2]">
           <img
-            src={asset.thumb}
+            src={detailSrc}
             alt={asset.title}
             className="w-full h-full object-cover"
           />
@@ -1860,7 +1962,7 @@ const CreativeHubDemo: React.FC = () => {
       // open the server streaming route in a new tab (cookies included)
       const base = (api.defaults.baseURL || "").replace(/\/$/, ""); // same base as axios
       window.open(
-        `${base}/assets/${a.id}/file`,
+        `${base}/assets/${a.id}/file?download=1`,
         "_blank",
         "noopener,noreferrer"
       );
@@ -2154,12 +2256,14 @@ const CreativeHubDemo: React.FC = () => {
         </AnimatePresence>
 
         {/* Modals */}
-        <UploadModal
-          open={uploadOpen}
-          onClose={() => setUploadOpen(false)}
-          currentUser={user as User}
-          onConfirm={(created) => setAssets((prev) => [created, ...prev])}
-        />
+        {uploadOpen && user?.role === "admin" && (
+          <UploadModal
+            open
+            onClose={() => setUploadOpen(false)}
+            currentUser={user} // no 'as User'
+            onConfirm={(created) => setAssets((prev) => [created, ...prev])}
+          />
+        )}
 
         <SignInModal
           open={signInOpen}

@@ -1,1 +1,3 @@
 /api/*  https://pw-creativehub-server.onrender.com/api/:splat  200
+# send all FE routes to index.html (SPA)
+/*              /index.html  200
